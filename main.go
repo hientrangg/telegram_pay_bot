@@ -1,65 +1,138 @@
 package main
 
-import(
-	"fmt"
-	"os"
-    tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+import (
+	"database/sql"
+	"errors"
+	"log"
+	"strconv"
+	"strings"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/hientrangg/telegram_pay_bot/database"
+	"github.com/hientrangg/telegram_pay_bot/manage"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
-	TELEGRAM_APITOKEN = "6236521521:AAHLlRtOQHvns5DXlU28hCiIU0dYch2ByzU"
+	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
 )
+
+var (
+    ValueDb *sql.DB
+)
+
+func init() {
+    ValueDb = database.InitDb()
+}
+
 func main() {
-	// init bot
-	fmt.Println("pay bot")
-	bot, err := tgbotapi.NewBotAPI(os.Getenv(TELEGRAM_APITOKEN))
+    bot, err := tgbotapi.NewBotAPI(TELEGRAM_APITOKEN)
+    if err != nil {
+        log.Panic(err)
+    }
+    
+    bot.Debug = true
+    log.Printf("Authorized on account %s", bot.Self.UserName)
+    
+    u := tgbotapi.NewUpdate(0)
+    u.Timeout = 60
+    
+    updates, err := bot.GetUpdatesChan(u)
     if err != nil {
         panic(err)
     }
 
-    bot.Debug = true
-
-	//bot code
-	
-	// Create a new UpdateConfig struct with an offset of 0. Offsets are used
-    // to make sure Telegram knows we've handled previous values and we don't
-    // need them repeated.
-    updateConfig := tgbotapi.NewUpdate(0)
-
-    // Tell Telegram we should wait up to 30 seconds on each request for an
-    // update. This way we can get information just as quickly as making many
-    // frequent requests without having to send nearly as many.
-    updateConfig.Timeout = 30
-
-    // Start polling Telegram for updates.
-    updates := bot.GetUpdatesChan(updateConfig)
-
-    // Let's go through each update that we're getting from Telegram.
     for update := range updates {
-        // Telegram can send many types of updates depending on what your Bot
-        // is up to. We only want to look at messages for now, so we can
-        // discard any other updates.
-        if update.Message == nil {
+        if update.Message == nil { // ignore any non-Message updates
             continue
         }
 
-        // Now that we know we've gotten a new message, we can construct a
-        // reply! We'll take the Chat ID and Text from the incoming message
-        // and use it to create a new message.
-        msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-        // We'll also say that this message is a reply to the previous message.
-        // For any other specifications than Chat ID or Text, you'll need to
-        // set fields on the `MessageConfig`.
-        msg.ReplyToMessageID = update.Message.MessageID
+        if !update.Message.IsCommand() { // ignore any non-command Messages
+            continue
+        }
 
-        // Okay, we're sending our message off! We don't care about the message
-        // we just sent, so we'll discard it.
+        // Create a new MessageConfig. We don't have text yet,
+        // so we leave it empty.
+        msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
+
+        // Extract the command from the Message.
+        switch update.Message.Command() {
+        case "help":
+            msg.Text = "use /deposit to deposit; /tranfer to tranfer; /withdraw to withdraw; /status to get wallet status; /register to register."
+        
+        case "register":
+            msg.Text = "REGISTER"
+            err := manage.Register(int64(update.Message.From.ID))
+            if err != nil {
+                msg.Text = "error while register, please try again"
+            }
+        case "deposit":
+            msg.Text = "DEPOSIT"
+            value, err := SplitValue(update.Message.CommandArguments())
+            if err != nil {
+                msg.Text = "Please provide value"
+                continue
+            }
+            
+            //Process value
+            valueInt, err := strconv.ParseInt(value, 10, 64)
+            if err != nil {
+                msg.Text = "Error white deposit, please try again"
+                continue
+            }
+
+            err = manage.Deposit(int64(update.Message.From.ID), valueInt)
+            if err != nil {
+                msg.Text = "Error white deposit, please try again"
+            }
+
+        case "tranfer":
+            msg.Text = "TRANFER"
+
+        case "withdraw":
+            msg.Text = "WITHDRAW"
+            value, err := SplitValue(update.Message.CommandArguments())
+            if err != nil {
+                msg.Text = "Please provide value"
+                continue
+            }
+
+            //Process value
+            valueInt, err := strconv.ParseInt(value, 10, 64)
+            if err != nil {
+                msg.Text = "Error white withdraw, please try again"
+                continue
+            }
+            err = manage.Withdraw(int64(update.Message.From.ID), valueInt)
+            if err != nil {
+                msg.Text = "Error white withdraw, please try again"
+            }
+
+        case "status":
+            msg.Text = "Get wallet status"
+            value, err := manage.GetStatus(int64(update.Message.From.ID))
+            if err != nil {
+                msg.Text = "error while get account value, please try again"
+            }
+
+            msg.Text = strconv.Itoa(int(value))
+        default:
+            msg.Text = "I don't know that command"
+        }
+
         if _, err := bot.Send(msg); err != nil {
-            // Note that panics are a bad way to handle errors. Telegram can
-            // have service outages or network errors, you should retry sending
-            // messages or more gracefully handle failures.
-            panic(err)
+            log.Panic(err)
         }
     }
+}
+    
+func SplitValue(command string) (string, error) {
+    parts := strings.SplitN(command, "", 2)
+	if len(parts) < 2 {
+		// The command was not followed by a value
+		return "", errors.New("no have value after command")
+	}
+	commandValue := parts[1]
 
+    return commandValue, nil
 }
