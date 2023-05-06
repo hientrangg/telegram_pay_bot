@@ -2,12 +2,72 @@ package manage
 
 import (
 	"errors"
+	"strconv"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/hientrangg/telegram_pay_bot/database"
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func Deposit(Uid int64, amount int64) error {
+const (
+	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
+)
+
+func Deposit(bot *tgbotapi.BotAPI) error {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates := bot.GetUpdatesChan(u)
+
+	for update := range updates {
+		if update.Message != nil {
+			value, err := strconv.ParseInt(update.Message.Text, 10, 64)
+			if err != nil {
+				return err
+			}
+			err = DoDeposit(update.Message.From.ID, value)
+			if err != nil {
+				return err
+			}
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit Successful")
+			bot.StopReceivingUpdates()
+			if _, err := bot.Send(msg); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
+}
+
+func Withdraw(bot *tgbotapi.BotAPI) error {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates := bot.GetUpdatesChan(u)
+
+	for update := range updates {
+		if update.Message != nil {
+			value, err := strconv.ParseInt(update.Message.Text, 10, 64)
+			if err != nil {
+				return err
+			}
+			err = DoWithdraw(update.Message.From.ID, value)
+			if err != nil {
+				return err
+			}
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw Successful")
+			bot.StopReceivingUpdates()
+			if _, err := bot.Send(msg); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
+}
+
+func DoDeposit(Uid int64, amount int64) error {
 	value, err := database.QueryValue(Uid)
 	if err != nil {
 		return err
@@ -20,7 +80,7 @@ func Deposit(Uid int64, amount int64) error {
 	return nil
 }
 
-func Withdraw(Uid int64, amount int64) error {
+func DoWithdraw(Uid int64, amount int64) error {
 	value, err := database.QueryValue(Uid)
 	if err != nil {
 		return err
@@ -36,7 +96,7 @@ func Withdraw(Uid int64, amount int64) error {
 	return nil
 }
 
-func GetStatus(Uid int64) (int64, error) {
+func DoGetStatus(Uid int64) (int64, error) {
 	value, err := database.QueryValue(Uid)
 	if err != nil {
 		return 0, err
@@ -45,7 +105,7 @@ func GetStatus(Uid int64) (int64, error) {
 	return value, nil
 }
 
-func Tranfer(sender, receiver, amount int64) error {
+func DoTranfer(sender, receiver, amount int64) error {
 	senderValue, err := database.QueryValue(sender)
 	if err != nil {
 		return err
@@ -77,7 +137,7 @@ func Tranfer(sender, receiver, amount int64) error {
 	return nil
 }
 
-func Register(uid int64) error {
+func DoRegister(uid int64) error {
 	err := database.Add(uid)
 	if err != nil {
 		return err
