@@ -2,9 +2,7 @@ package manage
 
 import (
 	"errors"
-	"strconv"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/hientrangg/telegram_pay_bot/database"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -13,60 +11,22 @@ const (
 	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
 )
 
-func Deposit(bot *tgbotapi.BotAPI) error {
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
+func Tranfer(inputSender chan int64, inputReceiver chan int64, inputValue chan int64, output chan string) {
+	for{
+        sender := <- inputSender
+        receiver := <- inputReceiver
+        value := <- inputValue
 
-	updates := bot.GetUpdatesChan(u)
+        err := DoTranfer(sender, receiver, value)
+        if err != nil {
+            status := "error"
+            output <- status
+        }
 
-	for update := range updates {
-		if update.Message != nil {
-			value, err := strconv.ParseInt(update.Message.Text, 10, 64)
-			if err != nil {
-				return err
-			}
-			err = DoDeposit(update.Message.From.ID, value)
-			if err != nil {
-				return err
-			}
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit Successful")
-			bot.StopReceivingUpdates()
-			if _, err := bot.Send(msg); err != nil {
-				return err
-			}
-			break
-		}
-	}
-	return nil
+        status := "ok"
+        output <- status
+    }
 }
-
-func Withdraw(bot *tgbotapi.BotAPI) error {
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-
-	updates := bot.GetUpdatesChan(u)
-
-	for update := range updates {
-		if update.Message != nil {
-			value, err := strconv.ParseInt(update.Message.Text, 10, 64)
-			if err != nil {
-				return err
-			}
-			err = DoWithdraw(update.Message.From.ID, value)
-			if err != nil {
-				return err
-			}
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw Successful")
-			bot.StopReceivingUpdates()
-			if _, err := bot.Send(msg); err != nil {
-				return err
-			}
-			break
-		}
-	}
-	return nil
-}
-
 func DoDeposit(Uid int64, amount int64) error {
 	value, err := database.QueryValue(Uid)
 	if err != nil {

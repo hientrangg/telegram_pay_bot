@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"math/rand"
 	"strconv"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -18,6 +19,10 @@ const (
 
 var (
 	ValueDb *sql.DB
+    inputSender = make(chan int64)
+    inputReceiver = make(chan int64)
+    inputValue = make(chan int64)
+    output = make(chan string)
 )
 
 var numericKeyboard = tgbotapi.NewInlineKeyboardMarkup(
@@ -37,6 +42,7 @@ func init() {
 }
 
 func main() {
+    go manage.Tranfer(inputSender, inputReceiver, inputValue, output)
 	//init bot to get update
 	bot := initbot.Init(TELEGRAM_APITOKEN)
 
@@ -50,18 +56,96 @@ func main() {
 
 	for update := range updates {
 		if update.Message != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
+            if update.Message.IsCommand() {
+			    msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
 
-			switch update.Message.Command() {
-			case "start":
-				msg.ReplyMarkup = numericKeyboard
-			default:
-				msg.Text = "I don't know this command, please try again"
-			}
-			// Send the message.
-			if _, err := bot.Send(msg); err != nil {
-				panic(err)
-			}
+			    switch update.Message.Command() {
+			    case "start":
+				    msg.ReplyMarkup = numericKeyboard
+                case "testacc": //register test account
+                    uid := rand.Int63n(999999999)
+                    err := manage.DoRegister(uid)
+                    if err != nil {
+                    msg.Text = "error while register, please try again"
+                    continue
+                    }   
+
+                    msg.Text = "Register Successful"
+			    default:
+				    msg.Text = "I don't know this command, please try again"
+			    }
+			    // Send the message.
+			    if _, err := bot.Send(msg); err != nil {
+				    panic(err)
+			    }
+            } else if update.Message.ReplyToMessage != nil {
+                switch update.Message.ReplyToMessage.Text{
+                case "Deposit value":
+                    value := update.Message.Text
+                    msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit value is " + value)
+                    if _, err := bot.Send(msg); err != nil {
+					    log.Panic(err)
+				    }
+
+                    valueInt, _ := strconv.ParseInt(value, 10, 64)
+                    err := manage.DoDeposit(update.Message.From.ID, valueInt)
+                    if err != nil {
+                        msg.Text = "Error while deposit, please try again"
+                        bot.Send(msg)
+                    }
+
+                    msg.Text = "Deposit Sucessful"
+                    bot.Send(msg)
+                case "Withdraw value":
+                    value := update.Message.Text
+                    msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value is " + value)
+                    if _, err := bot.Send(msg); err != nil {
+					    log.Panic(err)
+				    }
+
+                    valueInt, _ := strconv.ParseInt(value, 10, 64)
+                    err := manage.DoWithdraw(update.Message.From.ID, valueInt)
+                    if err != nil {
+                        msg.Text = "Error while withdraw, please try again"
+                        bot.Send(msg)
+                    }
+                    msg.Text = "Withdraw Successful"
+                    bot.Send(msg)
+                case "Receiver UID":
+                    receiver := update.Message.Text
+                    msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Receiver is " + receiver)
+                    if _, err := bot.Send(msg); err != nil {
+					    log.Panic(err)
+				    }
+
+                    receiverInt, _ := strconv.ParseInt(receiver, 10, 64)
+                    msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Value")
+                    msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+                    if _, err := bot.Send(msg); err != nil {
+                        panic(err)
+                    }
+                    inputSender <- update.Message.From.ID
+                    inputReceiver <- receiverInt
+                case "Value":
+                    value := update.Message.Text
+                    msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Tranfer value " + value)
+                    if _, err := bot.Send(msg); err != nil {
+					    log.Panic(err)
+				    }
+
+                    valueInt, _ := strconv.ParseInt(value, 10, 64)
+                    inputValue <- valueInt
+                    
+                    status := <- output
+                    if status == "error" {
+                        msg.Text = "Error while tranfer, please try again"
+                        bot.Send(msg)
+                    } else if status == "ok" {
+                        msg.Text = "Tranfer successful"
+                        bot.Send(msg)
+                    }
+                }
+        }
 		} else if update.CallbackQuery != nil {
 			// Respond to the callback query, telling Telegram to show the user
 			// a message with the data received.
@@ -74,33 +158,23 @@ func main() {
 			switch update.CallbackQuery.Data {
 			case "deposit":
 				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Deposit value")
+                msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
 
 				if _, err := bot.Send(msg); err != nil {
 					panic(err)
-				}
-
-                bot2 := initbot.Init(TELEGRAM_APITOKEN)
-				if err := manage.Deposit(bot2); err != nil {
-					msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Error while deposit, please try again")
-					if _, err := bot.Send(msg); err != nil {
-						panic(err)
-					}
 				}
 			case "tranfer":
-
+                msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Receiver UID")
+                msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+                if _, err := bot.Send(msg); err != nil {
+					panic(err)
+				}
 			case "withdraw":
 				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Withdraw value")
+                msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
 
 				if _, err := bot.Send(msg); err != nil {
 					panic(err)
-				}
-                
-                bot2 := initbot.Init(TELEGRAM_APITOKEN)
-				if err := manage.Withdraw(bot2); err != nil {
-					msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Error while withdraw, please try again")
-					if _, err := bot.Send(msg); err != nil {
-						panic(err)
-					}
 				}
 			case "status":
 				msg.Text = "Get wallet status"
@@ -130,6 +204,6 @@ func main() {
 					log.Panic(err)
 				}
 			}
-		}
+        }
 	}
 }
