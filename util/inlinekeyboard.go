@@ -62,3 +62,4 @@ func InitStartKeyboard(uid int, balance int) tgbotapi.InlineKeyboardMarkup {
 
 	return keyboard
 }
+

@@ -1,21 +1,22 @@
 package database
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"log"
+	"math/big"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Transaction struct {
-	ID      int
-	Type   string
-	Sender  int
+	ID       int
+	Type     string
+	Sender   int
 	Receiver int
-	Amount  int
-	Status string
+	Amount   int
+	Status   string
 }
-
 
 func InitHistodyDB(dbpath string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", dbpath)
@@ -37,29 +38,25 @@ func InitHistodyDB(dbpath string) (*sql.DB, error) {
 	return db, nil
 }
 
-func AddTransaction(db *sql.DB, t *Transaction) error {
+func AddTransaction(db *sql.DB, t *Transaction) (int, error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	stmt, err := tx.Prepare("INSERT INTO transactions(id, type, sender, receiver, amount, status) values(?, ?, ?, ?, ?, ?)")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer stmt.Close()
 
-	res, err := stmt.Exec(t.ID ,t.Type, t.Sender, t.Receiver, t.Amount, t.Status)
+	t.ID, _ = randUID()
+	_, err = stmt.Exec(t.ID, t.Type, t.Sender, t.Receiver, t.Amount, t.Status)
 	if err != nil {
 		tx.Rollback()
-		return err
+		return 0, err
 	}
-	ID, err := res.LastInsertId()
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	t.ID = int(ID)
-	return tx.Commit()
+
+	return t.ID, tx.Commit()
 }
 
 func QueryTransactionsBySender(db *sql.DB, sender int) ([]Transaction, error) {
@@ -110,7 +107,7 @@ func QueryTransactionsByReceiver(db *sql.DB, receiver int) ([]Transaction, error
 
 func QueryTransactionByID(db *sql.DB, id int) (*Transaction, error) {
 	var t Transaction
-	err := db.QueryRow("SELECT id, param, sender, receiver, status, amount FROM transactions WHERE id=?", id).Scan(&t.ID, &t.Type, &t.Sender, &t.Receiver, &t.Status, &t.Amount)
+	err := db.QueryRow("SELECT id, type, sender, receiver, amount, status FROM transactions WHERE id=?", id).Scan(&t.ID, &t.Type, &t.Sender, &t.Receiver, &t.Amount, &t.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -118,15 +115,15 @@ func QueryTransactionByID(db *sql.DB, id int) (*Transaction, error) {
 }
 
 func UpdateStatus(historyDB *sql.DB, transaction Transaction) error {
-    stmt, err := historyDB.Prepare("UPDATE transactions SET status=? WHERE id=?")
-    if err != nil {
-        return err
-    }
-    _, err = stmt.Exec(transaction.Status, transaction.ID)
-    if err != nil {
-        return err
-    }
-    return nil
+	stmt, err := historyDB.Prepare("UPDATE transactions SET status=? WHERE id=?")
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Exec(transaction.Status, transaction.ID)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func FilterTransactionsReceiver(db *sql.DB, status string, receiver int) ([]Transaction, error) {
@@ -173,4 +170,12 @@ func FilterTransactionsSender(db *sql.DB, status string, sender int) ([]Transact
 	}
 
 	return txns, nil
+}
+
+func randUID() (int, error) {
+	randomInt, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		return 0, err
+	}
+	return int(randomInt.Int64()), nil
 }
