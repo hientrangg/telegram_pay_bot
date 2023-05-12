@@ -126,6 +126,7 @@ func main() {
 				}
 			case "status":
 				getBalance(bot, update.CallbackQuery)
+                homePage(bot, update.CallbackQuery.Message)
 
 			case "register":
 				register(bot, update.CallbackQuery)
