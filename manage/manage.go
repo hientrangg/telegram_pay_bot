@@ -3,6 +3,7 @@ package manage
 import (
 	"database/sql"
 	"strconv"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/hientrangg/telegram_pay_bot/database"
@@ -90,9 +91,9 @@ func DoWithdraw(userDb *sql.DB, historyDb *sql.DB, Uid int, amount int) (int, er
 		return 0, err
 	}
 	t := database.Transaction{Type: "withdraw", Sender: Uid, Receiver: Uid, Amount: amount, Status: "Done"}
-	txID, _ :=database.AddTransaction(historyDb, &t)
+	txID, _ := database.AddTransaction(historyDb, &t)
 
-	return txID ,nil
+	return txID, nil
 }
 
 func DoGetStatus(db *sql.DB, Uid int) (UserData, error) {
@@ -142,4 +143,21 @@ func DoCotPay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, sender in
 	msg.ReplyMarkup = util.ReceiverConfirmKeyboard
 	bot.Send(msg)
 	return txID, nil
+}
+
+func GetPincode(inputchan chan string, output chan string) {
+	var pincode string
+	for {
+		num := <-inputchan
+
+		switch num {
+		case "ok":
+			output <- pincode
+			pincode = ""
+		case "<":
+			pincode = strings.TrimSuffix(pincode, string(pincode[len(pincode)-1]))
+		default:
+			pincode = pincode + num
+		}
+	}
 }

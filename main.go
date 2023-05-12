@@ -29,11 +29,13 @@ var (
 	inputCotpayReceiver       = make(chan int)
 	inputCotpayValue          = make(chan int)
 	cotpayOutput              = make(chan string)
+	inputPincode              = make(chan string)
+	outputPincode             = make(chan string)
 )
 
 func init() {
-	userDb, _ = database.InitDB("./userData.sqlite")
-	historyDb, _ = database.InitHistodyDB("./history.sqlite")
+	userDb, _ = database.InitDB("./db/userData.sqlite")
+	historyDb, _ = database.InitHistodyDB("./db/history.sqlite")
 }
 func main() {
 	//init bot to get update and send message
@@ -49,6 +51,7 @@ func main() {
 
 	go manage.Tranfer(userDb, historyDb, inputSender, inputReceiver, inputValue, tranferOutput)
 	go manage.RequestCotpay(bot, userDb, historyDb, inputCotpaySender, inputCotpaySenderUsername, inputCotpayReceiver, inputCotpayValue, cotpayOutput)
+    go manage.GetPincode(inputPincode, outputPincode)
 
 	for update := range updates {
 		if update.Message != nil {
@@ -65,6 +68,7 @@ func main() {
 			} else if update.Message.ReplyToMessage != nil {
 				switch update.Message.ReplyToMessage.Text {
 				case "Deposit value":
+                    openPincode(bot, update.Message)
 					deposit(bot, update.Message)
 					homePage(bot, update.Message)
 
@@ -93,7 +97,11 @@ func main() {
 			if _, err := bot.Request(callback); err != nil {
 				panic(err)
 			}
-			
+
+			if update.CallbackQuery.Message.Text == "Enter pincode" {
+                inputPincode <- update.CallbackQuery.Data
+			}
+
 			var msg tgbotapi.MessageConfig
 			switch update.CallbackQuery.Data {
 			case "deposit":
@@ -150,7 +158,7 @@ func main() {
 
 			case "confirm-cotpay-sender":
 				confirm_cotpay_sender(bot, update.CallbackQuery.Message)
-                homePage(bot, update.CallbackQuery.Message)
+				homePage(bot, update.CallbackQuery.Message)
 
 			}
 		}
@@ -419,4 +427,10 @@ func confirm_cotpay_sender(bot *tgbotapi.BotAPI, message *tgbotapi.Message) erro
 	msg := tgbotapi.NewMessage(message.Chat.ID, text)
 	bot.Send(msg)
 	return nil
+}
+
+func openPincode(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	msg := tgbotapi.NewMessage(message.Chat.ID, "Enter pincode")
+	msg.ReplyMarkup = util.PincodeKeyboard
+	bot.Send(msg)
 }
