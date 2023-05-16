@@ -128,7 +128,7 @@ func TranferLockValue(db *sql.DB, uid, value int) error {
 
 	newLockValue := lockValue - value
 	newValue := currentValue - value
-	newAllowValue := currentValue - newLockValue
+	newAllowValue := newValue - newLockValue
 	if newLockValue < 0 {
 		tx.Rollback()
 		return errors.New("not enough locked funds")
