@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"strconv"
 	"strings"
+	"unicode"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/hientrangg/telegram_pay_bot/database"
@@ -22,22 +23,27 @@ const (
 	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
 )
 
-func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, inputSender chan int, inputSenderUsername chan string, inputReceiver chan int, inputValue chan int, output chan string) {
+func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, inputSender chan int, inputSenderUsername chan string, inputReceiver chan int, inputValue chan int, inputStatus, output chan string) {
 	for {
 		sender := <-inputSender
 		senderUsername := <-inputSenderUsername
 		receiver := <-inputReceiver
 		value := <-inputValue
+		status := <- inputStatus
 
-		txID, err := DoCotPay(bot, userdb, historyDb, sender, senderUsername, receiver, value)
+		if status != "ok" {
+			continue
+		}
+		
+		txIDInt, err := DoCotPay(bot, userdb, historyDb, sender, senderUsername, receiver, value)
 		if err != nil {
 			status := "error"
 			output <- status
 		}
 
-		status := strconv.Itoa(txID)
+		txID := strconv.Itoa(txIDInt)
 
-		output <- status
+		output <- txID
 	}
 }
 
@@ -55,45 +61,52 @@ func TranferCotpay(userDb *sql.DB, t database.Transaction) error {
 	return nil
 }
 
-func Tranfer(userDb *sql.DB, historyDb *sql.DB, inputSender chan int, inputReceiver chan int, inputValue chan int, output chan string) {
+func Tranfer(userDb *sql.DB, historyDb *sql.DB, inputSender chan int, inputReceiver chan int, inputValue chan int, inputStatus chan string, output chan string) {
 	for {
 		sender := <-inputSender
 		receiver := <-inputReceiver
 		value := <-inputValue
+		status := <- inputStatus
 
-		txID, err := DoTranfer(userDb, historyDb, sender, receiver, value)
+		if status != "ok" {
+			continue
+		}
+
+		txIDInt, err := DoTranfer(userDb, historyDb, sender, receiver, value)
 		if err != nil {
 			status := "error"
 			output <- status
 		}
 
-		status := strconv.Itoa(txID)
+		txID := strconv.Itoa(txIDInt)
 
-		output <- status
+		output <- txID
 	}
 }
-func DoDeposit(userdb *sql.DB, historyDb *sql.DB, Uid int, amount int) (int, error) {
-	err := database.UpdateValue(userdb, Uid, amount)
-	if err != nil {
-		return 0, err
+func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan string, outputChan chan string) {
+	for {
+		Uid := <-inputChan
+		amount := <-inputChan
+		status := <-inputChan
+		if status != "ok" {
+			continue
+		}
+		UidInt, _ := strconv.Atoi(Uid)
+		amountInt, _ := strconv.Atoi(amount)
+		err := database.UpdateValue(userdb, UidInt, amountInt)
+		if err != nil {
+			outputChan <- "error"
+			continue
+		}
+
+		t := database.Transaction{Type: "deposit", Sender: UidInt, Receiver: UidInt, Amount: amountInt, Status: "Done"}
+
+		txID, _ := database.AddTransaction(historyDb, &t)
+
+		txIDInt := strconv.Itoa(txID)
+
+		outputChan <- txIDInt
 	}
-
-	t := database.Transaction{Type: "deposit", Sender: Uid, Receiver: Uid, Amount: amount, Status: "Done"}
-
-	txID, _ := database.AddTransaction(historyDb, &t)
-
-	return txID, nil
-}
-
-func DoWithdraw(userDb *sql.DB, historyDb *sql.DB, Uid int, amount int) (int, error) {
-	err := database.UpdateValue(userDb, Uid, -amount)
-	if err != nil {
-		return 0, err
-	}
-	t := database.Transaction{Type: "withdraw", Sender: Uid, Receiver: Uid, Amount: amount, Status: "Done"}
-	txID, _ := database.AddTransaction(historyDb, &t)
-
-	return txID, nil
 }
 
 func DoGetStatus(db *sql.DB, Uid int) (UserData, error) {
@@ -114,6 +127,7 @@ func DoTranfer(userDb *sql.DB, historyDb *sql.DB, sender, receiver, amount int) 
 
 	err = database.UpdateValue(userDb, receiver, amount)
 	if err != nil {
+		database.UpdateValue(userDb, sender, amount)
 		return 0, err
 	}
 
@@ -122,8 +136,8 @@ func DoTranfer(userDb *sql.DB, historyDb *sql.DB, sender, receiver, amount int) 
 	return txID, nil
 }
 
-func DoRegister(db *sql.DB, uid int) error {
-	err := database.AddUser(db, uid, 0)
+func DoRegister(db *sql.DB, uid int, pincode string) error {
+	err := database.AddUser(db, uid, 0, pincode)
 	if err != nil {
 		return err
 	}
@@ -151,13 +165,41 @@ func GetPincode(inputchan chan string, output chan string) {
 		num := <-inputchan
 
 		switch num {
-		case "ok":
-			output <- pincode
-			pincode = ""
+		case "0":
+			pincode = pincode + num
+		case "1":
+			pincode = pincode + num
+		case "2":
+			pincode = pincode + num
+		case "3":
+			pincode = pincode + num
+		case "4":
+			pincode = pincode + num
+		case "5":
+			pincode = pincode + num
+		case "6":
+			pincode = pincode + num
+		case "7":
+			pincode = pincode + num
+		case "8":
+			pincode = pincode + num
+		case "9":
+			pincode = pincode + num
 		case "<":
 			pincode = strings.TrimSuffix(pincode, string(pincode[len(pincode)-1]))
 		default:
-			pincode = pincode + num
+			output <- pincode
+			pincode = ""
 		}
 	}
 }
+
+func IsNumeric(s string) bool {
+	for _, char := range s {
+		if !unicode.IsDigit(char) {
+			return false
+		}
+	}
+	return true
+}
+

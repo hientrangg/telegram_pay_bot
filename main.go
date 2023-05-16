@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"log"
 	"strconv"
 
@@ -14,27 +15,32 @@ import (
 )
 
 const (
-	TELEGRAM_APITOKEN = "6236521521:AAHLlRtOQHvns5DXlU28hCiIU0dYch2ByzU"
+	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
 )
 
 var (
 	userDb                    *sql.DB
 	historyDb                 *sql.DB
-	inputSender               = make(chan int)
-	inputReceiver             = make(chan int)
-	inputValue                = make(chan int)
-	tranferOutput             = make(chan string)
+	pincode                   string
+	inputTranferSender        = make(chan int)
+	inputTranferReceiver      = make(chan int)
+	inputTranferValue         = make(chan int)
+	inputTranferStatus        = make(chan string)
+	outputTranfer             = make(chan string)
 	inputCotpaySender         = make(chan int)
 	inputCotpaySenderUsername = make(chan string)
 	inputCotpayReceiver       = make(chan int)
 	inputCotpayValue          = make(chan int)
-	cotpayOutput              = make(chan string)
+	inputCotpayStatus         = make(chan string)
+	outputCotpay              = make(chan string)
 	inputPincode              = make(chan string)
 	outputPincode             = make(chan string)
+	inputDeposit              = make(chan string)
+	outputDeposit             = make(chan string)
 )
 
 func init() {
-	userDb, _ = database.InitDB("./db/userData.sqlite")
+	userDb, _ = database.InitUserDB("./db/userData.sqlite")
 	historyDb, _ = database.InitHistodyDB("./db/history.sqlite")
 }
 func main() {
@@ -49,47 +55,91 @@ func main() {
 
 	updates := bot.GetUpdatesChan(u)
 
-	go manage.Tranfer(userDb, historyDb, inputSender, inputReceiver, inputValue, tranferOutput)
-	go manage.RequestCotpay(bot, userDb, historyDb, inputCotpaySender, inputCotpaySenderUsername, inputCotpayReceiver, inputCotpayValue, cotpayOutput)
-    go manage.GetPincode(inputPincode, outputPincode)
+	go manage.Tranfer(userDb, historyDb, inputTranferSender, inputTranferReceiver, inputTranferValue, inputTranferStatus, outputTranfer)
+	go manage.RequestCotpay(bot, userDb, historyDb, inputCotpaySender, inputCotpaySenderUsername, inputCotpayReceiver, inputCotpayValue, inputCotpayStatus, outputCotpay)
+	go manage.GetPincode(inputPincode, outputPincode)
+	go manage.DoDeposit(userDb, historyDb, inputDeposit, outputDeposit)
 
 	for update := range updates {
 		if update.Message != nil {
 			if update.Message.IsCommand() {
 				switch update.Message.Command() {
 				case "start":
-					homePage(bot, update.Message)
+					homePage(bot, update)
+				case "test":
+					openPincode(bot, update.Message, "data")
 				default:
 					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "I don't know this command, please try again")
-
 					bot.Send(msg)
 				}
 
 			} else if update.Message.ReplyToMessage != nil {
 				switch update.Message.ReplyToMessage.Text {
 				case "Deposit value":
-                    openPincode(bot, update.Message)
-					deposit(bot, update.Message)
-					homePage(bot, update.Message)
+					if !manage.IsNumeric(update.Message.Text) {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
+						bot.Send(msg)
+						homePage(bot, update)
+						continue
+					}
+					valueInt, _ := strconv.Atoi(update.Message.Text)
+					if valueInt < 0 {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit value must > 0")
+						bot.Send(msg)
+						homePage(bot, update)
+						continue
+					}
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit value is "+update.Message.Text)
+					bot.Send(msg)
+					uid := strconv.Itoa(int(update.Message.From.ID))
+					inputDeposit <- uid
+					inputDeposit <- update.Message.Text
+					openPincode(bot, update.Message, "deposit")
 
 				case "Withdraw value":
-					withdraw(bot, update.Message)
-					homePage(bot, update.Message)
+					if !manage.IsNumeric(update.Message.Text) {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
+						bot.Send(msg)
+						homePage(bot, update)
+						continue
+					}
+					valueInt, _ := strconv.Atoi(update.Message.Text)
+					if valueInt < 0 {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value must > 0")
+						bot.Send(msg)
+						homePage(bot, update)
+						continue
+					}
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value is "+update.Message.Text)
+					bot.Send(msg)
+					uid := strconv.Itoa(int(update.Message.From.ID))
+					value := "-" + update.Message.Text
+					inputDeposit <- uid
+					inputDeposit <- value
+					openPincode(bot, update.Message, "deposit")
 
 				case "Tranfer receiver UID":
 					getTranferReceiver(bot, update.Message)
 
 				case "Tranfer value":
-					getTranferValue(bot, update.Message)
-					homePage(bot, update.Message)
+					err := getTranferValue(bot, update)
+					if err != nil {
+						continue
+					}
+					openPincode(bot, update.Message, "tranfer")
 
 				case "Cotpay receiver UID":
 					getCotpayReceiver(bot, update.Message)
 
 				case "Cotpay value":
-					getCotpayValue(bot, update.Message)
-					homePage(bot, update.Message)
-
+					err := getCotpayValue(bot, update.Message)
+					if err != nil {
+						continue
+					}
+					openPincode(bot, update.Message, "cotpay")
+                default:
+                    msg := tgbotapi.NewMessage(update.Message.Chat.ID, "defaut !!!!!!!!!!!!")
+					bot.Send(msg)
 				}
 			}
 		} else if update.CallbackQuery != nil {
@@ -98,118 +148,225 @@ func main() {
 				panic(err)
 			}
 
-			if update.CallbackQuery.Message.Text == "Enter pincode" {
-                inputPincode <- update.CallbackQuery.Data
-			}
-
 			var msg tgbotapi.MessageConfig
 			switch update.CallbackQuery.Data {
 			case "deposit":
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Deposit value")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+				if update.CallbackQuery.Message.Text == "Enter pincode" {
+					// editmsg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, update.Message.MessageID, "checking pincode")
+					// bot.Send(editmsg)
+					inputPincode <- update.CallbackQuery.Data
+					pincode = <-outputPincode
+					userPasswd, err := database.QueryPasswd(userDb, int(update.CallbackQuery.From.ID))
+					if err != nil {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "errorrrrrrr")
+						bot.Send(msg)
+						continue
+					}
+					if pincode == userPasswd {
+						inputDeposit <- "ok"
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "procesing")
+						bot.Send(msg)
+					} else {
+						inputDeposit <- "clear"
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Wrong pincode, please do again")
+						bot.Send(msg)
+						homePage(bot, update)
+						continue
+					}
 
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
+					txID := <-outputDeposit
+					if txID == "error" {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Error while process, pls try again")
+						bot.Send(msg)
+					} else {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Success, txID is "+txID)
+						bot.Send(msg)
+					}
+					homePage(bot, update)
+				} else {
+					msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Deposit value")
+					msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+
+					if _, err := bot.Send(msg); err != nil {
+						panic(err)
+					}
 				}
 			case "tranfer":
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Tranfer receiver UID")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
+				if update.CallbackQuery.Message.Text == "Enter pincode" {
+					inputPincode <- update.CallbackQuery.Data
+					pincode = <-outputPincode
+					userPasswd, err := database.QueryPasswd(userDb, int(update.CallbackQuery.From.ID))
+					if err != nil {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "errorrrrrrr")
+						bot.Send(msg)
+						continue
+					}
+
+					if pincode == userPasswd {
+						inputTranferStatus <- "ok"
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Do tranfer")
+						bot.Send(msg)
+					} else {
+						inputTranferStatus <- "clear"
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Wrong pincode, please do again")
+						bot.Send(msg)
+						homePage(bot, update)
+						continue
+					}
+
+					txID := <-outputTranfer
+					if txID == "error" {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Error while tranfer, pls try again")
+						bot.Send(msg)
+					} else {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Tranfer success, txID is "+txID)
+						bot.Send(msg)
+					}
+					homePage(bot, update)
+
+				} else {
+					msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Tranfer receiver UID")
+					msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+					bot.Send(msg)
 				}
 			case "withdraw":
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Withdraw value")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+				if update.CallbackQuery.Message.Text == "Enter pincode" {
+					inputPincode <- update.CallbackQuery.Data
+					pincode = <-outputPincode
+					userPasswd, err := database.QueryPasswd(userDb, int(update.CallbackQuery.From.ID))
+					if err != nil {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "errorrrrrrr")
+						bot.Send(msg)
+						continue
+					}
+					if pincode == userPasswd {
+						inputDeposit <- "ok"
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Do withdraw")
+						bot.Send(msg)
+					} else {
+						inputDeposit <- "clear"
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Wrong pincode, please do again")
+						bot.Send(msg)
+						homePage(bot, update)
+						continue
+					}
 
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
+					txID := <-outputDeposit
+					if txID == "error" {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Error while withdraw, pls try again")
+						bot.Send(msg)
+					} else {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Withdraw success, txID is "+txID)
+						bot.Send(msg)
+					}
+					homePage(bot, update)
+				} else {
+					msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Withdraw value")
+					msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+
+					if _, err := bot.Send(msg); err != nil {
+						panic(err)
+					}
 				}
 			case "status":
 				getBalance(bot, update.CallbackQuery)
-                homePage(bot, update.CallbackQuery.Message)
+				homePage(bot, update)
 
 			case "register":
-				register(bot, update.CallbackQuery)
+				if update.CallbackQuery.Message.Text == "Enter pincode" {
+					inputPincode <- update.CallbackQuery.Data
+					pincode = <-outputPincode
+					register(bot, update.CallbackQuery, pincode)
+				} else {
+					openPincode(bot, update.CallbackQuery.Message, "register")
+				}
+
+				homePage(bot, update)
 
 			case "cotpay":
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Cotpay receiver UID")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
+				if update.CallbackQuery.Message.Text == "Enter pincode" {
+					inputPincode <- update.CallbackQuery.Data
+					pincode = <-outputPincode
+					userPasswd, err := database.QueryPasswd(userDb, int(update.CallbackQuery.From.ID))
+					if err != nil {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "errorrrrrrr")
+						bot.Send(msg)
+						continue
+					}
+					if pincode == userPasswd {
+						inputCotpayStatus <- "ok"
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Do cotpay")
+						bot.Send(msg)
+					} else {
+						inputCotpayStatus <- "clear"
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Wrong pincode, please do again")
+						bot.Send(msg)
+						homePage(bot, update)
+						continue
+					}
+					txID := <-outputCotpay
+					if txID == "error" {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Error while cotpay, pls try again")
+						bot.Send(msg)
+					} else {
+						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Cotpay request success, txID is "+txID)
+						bot.Send(msg)
+					}
+					homePage(bot, update)
+				} else {
+					msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Cotpay receiver UID")
+					msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+					if _, err := bot.Send(msg); err != nil {
+						panic(err)
+					}
 				}
 			case "lockvalue":
 				getLockValue(bot, update.CallbackQuery)
-				homePage(bot, update.CallbackQuery.Message)
+				homePage(bot, update)
 
 			case "allowvalue":
 				getAllowValue(bot, update.CallbackQuery)
-				homePage(bot, update.CallbackQuery.Message)
+				homePage(bot, update)
 
 			case "uid":
 				getUID(bot, update.CallbackQuery)
-				homePage(bot, update.CallbackQuery.Message)
+				homePage(bot, update)
 
 			case "confirm-cotpay-receiver":
 				confirm_cotpay_receiver(bot, update.CallbackQuery.Message)
-				homePage(bot, update.CallbackQuery.Message)
+				homePage(bot, update)
 
 			case "cancel-cotpay-receiver":
 				cancel_cotpay_receiver(bot, update.CallbackQuery.Message)
-				homePage(bot, update.CallbackQuery.Message)
+				homePage(bot, update)
 
 			case "confirm-cotpay-sender":
 				confirm_cotpay_sender(bot, update.CallbackQuery.Message)
-				homePage(bot, update.CallbackQuery.Message)
+				homePage(bot, update)
 
+			default:
+				inputPincode <- update.CallbackQuery.Data
 			}
 		}
 	}
 }
 
-func homePage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	msg := tgbotapi.NewMessage(message.Chat.ID, "*** E-WALLET")
-	user := int(message.From.ID)
-	userData, _ := manage.DoGetStatus(userDb, user)
-	StartKeyBoard := util.InitStartKeyboard(user, userData.Value)
-	msg.ReplyMarkup = StartKeyBoard
-	bot.Send(msg)
-}
-
-func deposit(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	value := message.Text
-	msg := tgbotapi.NewMessage(message.Chat.ID, "Deposit value is "+value)
-	if _, err := bot.Send(msg); err != nil {
-		log.Panic(err)
-	}
-
-	valueInt, _ := strconv.Atoi(value)
-	user := int(message.From.ID)
-	txId, err := manage.DoDeposit(userDb, historyDb, user, valueInt)
-	if err != nil {
-		msg.Text = "Error while deposit, please try again"
+func homePage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
+	if update.CallbackQuery != nil {
+		msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "*** E-WALLET")
+		user := int(update.CallbackQuery.From.ID)
+		userData, _ := manage.DoGetStatus(userDb, user)
+		StartKeyBoard := util.InitStartKeyboard(user, userData.Value)
+		msg.ReplyMarkup = StartKeyBoard
+		bot.Send(msg)
+	} else {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "*** E-WALLET")
+		user := int(update.Message.From.ID)
+		userData, _ := manage.DoGetStatus(userDb, user)
+		StartKeyBoard := util.InitStartKeyboard(user, userData.Value)
+		msg.ReplyMarkup = StartKeyBoard
 		bot.Send(msg)
 	}
-
-	msg.Text = "Deposit Sucessful, txId is " + strconv.Itoa(txId)
-	bot.Send(msg)
-}
-
-func withdraw(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	value := message.Text
-	msg := tgbotapi.NewMessage(message.Chat.ID, "Withdraw value is "+value)
-	if _, err := bot.Send(msg); err != nil {
-		log.Panic(err)
-	}
-
-	valueInt, _ := strconv.Atoi(value)
-	user := int(message.From.ID)
-	txID, err := manage.DoWithdraw(userDb, historyDb, user, valueInt)
-	if err != nil {
-		msg.Text = "Error while withdraw, please try again"
-		bot.Send(msg)
-	}
-	msg.Text = "Withdraw Successful, txID is: " + strconv.Itoa(txID)
-	bot.Send(msg)
 }
 
 func getTranferReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
@@ -226,28 +383,38 @@ func getTranferReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		panic(err)
 	}
 	sender := int(message.From.ID)
-	inputSender <- sender
-	inputReceiver <- receiverInt
+	inputTranferSender <- sender
+	inputTranferReceiver <- receiverInt
 }
 
-func getTranferValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	value := message.Text
-	msg := tgbotapi.NewMessage(message.Chat.ID, "Tranfer value "+value)
-	if _, err := bot.Send(msg); err != nil {
-		log.Panic(err)
-	}
-
-	valueInt, _ := strconv.Atoi(value)
-	inputValue <- valueInt
-
-	status := <-tranferOutput
-	if status == "error" {
-		msg.Text = "Error while tranfer, please try again"
+func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "checking value")
+	bot.Send(msg)
+	if !manage.IsNumeric(update.Message.Text) {
+        inputTranferValue <- 0
+        inputTranferStatus <- "fail"
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
 		bot.Send(msg)
+		homePage(bot, update)
+		return errors.New("invalid value")
 	} else {
-		msg.Text = "Tranfer successful, txID is: " + status
-		bot.Send(msg)
+		valueInt, _ := strconv.Atoi(update.Message.Text)
+		if valueInt < 0 {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "tranfer value must > 0")
+			bot.Send(msg)
+			return errors.New("invalid value")
+		} else {
+			value := update.Message.Text
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Tranfer value "+value)
+			if _, err := bot.Send(msg); err != nil {
+				log.Panic(err)
+			}
+
+			valueInt, _ := strconv.Atoi(value)
+			inputTranferValue <- valueInt
+		}
 	}
+	return nil
 }
 
 func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
@@ -270,24 +437,30 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	}
 }
 
-func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	value := message.Text
-	msg := tgbotapi.NewMessage(message.Chat.ID, "Cotpay value "+value)
-	if _, err := bot.Send(msg); err != nil {
-		log.Panic(err)
-	}
-
-	valueInt, _ := strconv.Atoi(value)
-	inputCotpayValue <- valueInt
-
-	status := <-cotpayOutput
-	if status == "error" {
-		msg.Text = "Error while cotpay, please try again"
+func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
+	if !manage.IsNumeric(message.Text) {
+        inputCotpayValue <- 0
+        inputCotpayStatus <- "fail"
+		msg := tgbotapi.NewMessage(message.Chat.ID, "Invalid value, value must be number")
 		bot.Send(msg)
+		return errors.New("invalid value")
 	} else {
-		msg.Text = "Cotpay request successful, TxID: " + status
-		bot.Send(msg)
+		value := message.Text
+		valueInt, _ := strconv.Atoi(value)
+		if valueInt < 0 {
+			msg := tgbotapi.NewMessage(message.Chat.ID, "cotpay value must > 0")
+			bot.Send(msg)
+			return errors.New("invalid value")
+		} else {
+			msg := tgbotapi.NewMessage(message.Chat.ID, "Cotpay value "+value)
+			if _, err := bot.Send(msg); err != nil {
+				log.Panic(err)
+			}
+
+			inputCotpayValue <- valueInt
+		}
 	}
+	return nil
 }
 
 func getBalance(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
@@ -307,9 +480,9 @@ func getBalance(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 	}
 }
 
-func register(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
+func register(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, pincode string) {
 	user := int(callback.From.ID)
-	err := manage.DoRegister(userDb, user)
+	err := manage.DoRegister(userDb, user, pincode)
 	if err != nil {
 		text := "your UID is " + strconv.Itoa(user) + " error while register, please try again: " + err.Error()
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
@@ -430,8 +603,8 @@ func confirm_cotpay_sender(bot *tgbotapi.BotAPI, message *tgbotapi.Message) erro
 	return nil
 }
 
-func openPincode(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func openPincode(bot *tgbotapi.BotAPI, message *tgbotapi.Message, data string) {
 	msg := tgbotapi.NewMessage(message.Chat.ID, "Enter pincode")
-	msg.ReplyMarkup = util.PincodeKeyboard
+	msg.ReplyMarkup = util.InitPincodeKeyboard(data)
 	bot.Send(msg)
 }

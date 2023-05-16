@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func InitDB(dbpath string) (*sql.DB, error) {
+func InitUserDB(dbpath string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", dbpath)
 	if err != nil {
 		return nil, err
@@ -18,6 +19,7 @@ func InitDB(dbpath string) (*sql.DB, error) {
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
 			uid INTEGER PRIMARY KEY,
+			passwd INTEGER NOT NULL,
 			value INTEGER NOT NULL,
 			lockvalue INTEGER NOT NULL,
 			allowvalue INTEGER NOT NULL
@@ -30,18 +32,19 @@ func InitDB(dbpath string) (*sql.DB, error) {
 	return db, nil
 }
 
-func AddUser(db *sql.DB, uid, value int) error {
+func AddUser(db *sql.DB, uid, value int, pincode string) error {
 	stmt, err := db.Prepare(`
-		INSERT INTO users (uid, value, lockvalue, allowvalue)
-		VALUES (?, ?, 0, ?)
+		INSERT INTO users (uid, passwd, value, lockvalue, allowvalue)
+		VALUES (?, ?, ?, 0, ?)
 	`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
+	passwd, _ := strconv.Atoi(pincode)
 	allowvalue := value
-	_, err = stmt.Exec(uid, value, allowvalue)
+	_, err = stmt.Exec(uid, passwd, value, allowvalue)
 	if err != nil {
 		return err
 	}
@@ -150,4 +153,17 @@ func QueryUser(db *sql.DB, uid int) (int, int, int, error) {
 		log.Fatalf("error querying user: %v", err)
 	}
 	return value, lockValue, allowValue, nil
+}
+
+func QueryPasswd(db *sql.DB, uid int) (string, error) {
+	var passwd int 
+	err := db.QueryRow("SELECT passwd FROM users WHERE uid=?", uid).Scan(&passwd)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "nil" ,fmt.Errorf("user not found")
+		}
+		log.Fatalf("error querying user: %v", err)
+	}
+
+	return strconv.Itoa(passwd), nil
 }
