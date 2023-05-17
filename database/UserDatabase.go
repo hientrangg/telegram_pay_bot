@@ -194,3 +194,18 @@ func UpdateUid(db *sql.DB, uid int, pincode, username string) error {
 
 	return tx.Commit()
 }
+
+func UpdateUsername(db *sql.DB, uid int, username string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	
+	_, err = tx.Exec(`UPDATE users SET username = ? WHERE uid = ?`, username, uid)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}

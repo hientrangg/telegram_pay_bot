@@ -146,6 +146,10 @@ func main() {
 
 			var msg tgbotapi.MessageConfig
 			switch update.CallbackQuery.Data {
+            case "username":
+                updateUsername(bot, update.CallbackQuery)
+                homePage(bot, update)
+
 			case "deposit":
 				if update.CallbackQuery.Message.Text == "Enter pincode" {
                     editmsg := tgbotapi.NewEditMessageText(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, "Checking pincode")
@@ -658,4 +662,20 @@ func openPincode(bot *tgbotapi.BotAPI, message *tgbotapi.Message, data string) {
 	msg := tgbotapi.NewMessage(message.Chat.ID, "Enter pincode")
 	msg.ReplyMarkup = util.InitPincodeKeyboard(data)
 	bot.Send(msg)
+}
+
+func updateUsername(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) error {
+    username := callback.From.UserName
+    uid := callback.From.ID
+    err := database.UpdateUsername(userDb, int(uid), username)
+    if err != nil {
+        msg := tgbotapi.NewMessage(callback.Message.Chat.ID, err.Error())
+        bot.Send(msg)
+
+        return err
+    }
+    msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Update username success")
+    bot.Send(msg)
+
+    return nil
 }
