@@ -148,10 +148,11 @@ func main() {
 			switch update.CallbackQuery.Data {
 			case "deposit":
 				if update.CallbackQuery.Message.Text == "Enter pincode" {
-					// editmsg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, update.Message.MessageID, "checking pincode")
-					// bot.Send(editmsg)
+                    editmsg := tgbotapi.NewEditMessageText(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, "Checking pincode")
+					bot.Send(editmsg)
+
 					inputPincode <- update.CallbackQuery.Data
-					pincode = <-outputPincode
+                    pincode = <-outputPincode
 					userPasswd, err := database.QueryPasswd(userDb, int(update.CallbackQuery.From.ID))
 					if err != nil {
 						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "errorrrrrrr")
@@ -203,6 +204,9 @@ func main() {
 				}
 			case "tranferUid":
 				if update.CallbackQuery.Message.Text == "Enter pincode" {
+                    editmsg := tgbotapi.NewEditMessageText(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, "Checking pincode")
+					bot.Send(editmsg)
+
 					inputPincode <- update.CallbackQuery.Data
 					pincode = <-outputPincode
 					userPasswd, err := database.QueryPasswd(userDb, int(update.CallbackQuery.From.ID))
@@ -241,6 +245,9 @@ func main() {
 				}
 			case "withdraw":
 				if update.CallbackQuery.Message.Text == "Enter pincode" {
+                    editmsg := tgbotapi.NewEditMessageText(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, "Checking pincode")
+					bot.Send(editmsg)
+
 					inputPincode <- update.CallbackQuery.Data
 					pincode = <-outputPincode
 					userPasswd, err := database.QueryPasswd(userDb, int(update.CallbackQuery.From.ID))
@@ -284,6 +291,9 @@ func main() {
 
 			case "register":
 				if update.CallbackQuery.Message.Text == "Enter pincode" {
+                    editmsg := tgbotapi.NewEditMessageText(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, "Checking pincode")
+					bot.Send(editmsg)
+
 					inputPincode <- update.CallbackQuery.Data
 					pincode = <-outputPincode
 					register(bot, update.CallbackQuery, pincode)
@@ -294,6 +304,9 @@ func main() {
 
 			case "cotpay":
 				if update.CallbackQuery.Message.Text == "Enter pincode" {
+                    editmsg := tgbotapi.NewEditMessageText(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, "Checking pincode")
+					bot.Send(editmsg)
+
 					inputPincode <- update.CallbackQuery.Data
 					pincode = <-outputPincode
 					userPasswd, err := database.QueryPasswd(userDb, int(update.CallbackQuery.From.ID))
