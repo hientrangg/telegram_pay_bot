@@ -2,6 +2,7 @@ package manage
 
 import (
 	"database/sql"
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
@@ -23,19 +24,41 @@ const (
 	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
 )
 
-func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, inputSender chan int, inputSenderUsername chan string, inputReceiver chan int, inputValue chan int, inputStatus, output chan string) {
+func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, input, output chan string) {
 	for {
-		sender := <-inputSender
-		senderUsername := <-inputSenderUsername
-		receiver := <-inputReceiver
-		value := <-inputValue
-		status := <- inputStatus
+		sender := <-input
+		fmt.Println("------------------------------- sender is " + sender + " --------------------------------------------")
+		if sender == "clear" {
+			continue
+		}
+		senderInt, _ := strconv.Atoi(sender)
 
+		senderUsername := <-input
+		fmt.Println("------------------------------- senderusername is " + senderUsername + " --------------------------------------------")
+		if senderUsername == "clear" {
+			continue
+		}
+
+		receiver := <-input
+		fmt.Println("------------------------------- receiver is " + receiver + " --------------------------------------------")
+		if receiver == "clear" {
+			continue
+		}
+		receiverInt, _ := strconv.Atoi(receiver)
+
+		value := <-input
+		fmt.Println("------------------------------- valua is " + value + " --------------------------------------------")
+		if value == "clear"{
+			continue
+		}
+		valueInt, _ := strconv.Atoi(value)
+
+		status := <- input
 		if status != "ok" {
 			continue
 		}
-		
-		txIDInt, err := DoCotPay(bot, userdb, historyDb, sender, senderUsername, receiver, value)
+
+		txIDInt, err := DoCotPay(bot, userdb, historyDb, senderInt, senderUsername, receiverInt, valueInt)
 		if err != nil {
 			status := "error"
 			output <- status
@@ -61,18 +84,39 @@ func TranferCotpay(userDb *sql.DB, t database.Transaction) error {
 	return nil
 }
 
-func Tranfer(userDb *sql.DB, historyDb *sql.DB, inputSender chan int, inputReceiver chan int, inputValue chan int, inputStatus chan string, output chan string) {
+func Tranfer(userDb *sql.DB, historyDb *sql.DB, input chan string, output chan string) {
 	for {
-		sender := <-inputSender
-		receiver := <-inputReceiver
-		value := <-inputValue
-		status := <- inputStatus
+		sender := <-input
+		fmt.Println("------------------------------- sender is " + sender + " --------------------------------------------")
+		if sender == "clear" {
+			continue
+		}
+		senderInt,_ := strconv.Atoi(sender)
+		
 
+		receiver := <-input
+		fmt.Println("------------------------------- receiver is " + receiver + " --------------------------------------------")
+		if receiver == "clear" {
+			continue
+		}
+		receiverInt, _ := strconv.Atoi(receiver)
+		
+
+		value := <-input
+		fmt.Println("------------------------------- value is " + value + " --------------------------------------------")
+		if value == "clear" {
+			continue
+		}
+		valueInt, _ := strconv.Atoi(value)
+		
+
+		status := <- input
+		fmt.Println("------------------------------- status is " + status + " --------------------------------------------")
 		if status != "ok" {
 			continue
 		}
 
-		txIDInt, err := DoTranfer(userDb, historyDb, sender, receiver, value)
+		txIDInt, err := DoTranfer(userDb, historyDb, senderInt, receiverInt, valueInt)
 		if err != nil {
 			status := "error"
 			output <- status

@@ -19,24 +19,17 @@ const (
 )
 
 var (
-	userDb                    *sql.DB
-	historyDb                 *sql.DB
-	pincode                   string
-	inputTranferSender        = make(chan int)
-	inputTranferReceiver      = make(chan int)
-	inputTranferValue         = make(chan int)
-	inputTranferStatus        = make(chan string)
-	outputTranfer             = make(chan string)
-	inputCotpaySender         = make(chan int)
-	inputCotpaySenderUsername = make(chan string)
-	inputCotpayReceiver       = make(chan int)
-	inputCotpayValue          = make(chan int)
-	inputCotpayStatus         = make(chan string)
-	outputCotpay              = make(chan string)
-	inputPincode              = make(chan string)
-	outputPincode             = make(chan string)
-	inputDeposit              = make(chan string)
-	outputDeposit             = make(chan string)
+	userDb        *sql.DB
+	historyDb     *sql.DB
+	pincode       string
+	inputTranfer  = make(chan string)
+	outputTranfer = make(chan string)
+	inputCotpay   = make(chan string)
+	outputCotpay  = make(chan string)
+	inputPincode  = make(chan string)
+	outputPincode = make(chan string)
+	inputDeposit  = make(chan string)
+	outputDeposit = make(chan string)
 )
 
 func init() {
@@ -55,8 +48,8 @@ func main() {
 
 	updates := bot.GetUpdatesChan(u)
 
-	go manage.Tranfer(userDb, historyDb, inputTranferSender, inputTranferReceiver, inputTranferValue, inputTranferStatus, outputTranfer)
-	go manage.RequestCotpay(bot, userDb, historyDb, inputCotpaySender, inputCotpaySenderUsername, inputCotpayReceiver, inputCotpayValue, inputCotpayStatus, outputCotpay)
+	go manage.Tranfer(userDb, historyDb, inputTranfer, outputTranfer)
+	go manage.RequestCotpay(bot, userDb, historyDb, inputCotpay, outputCotpay)
 	go manage.GetPincode(inputPincode, outputPincode)
 	go manage.DoDeposit(userDb, historyDb, inputDeposit, outputDeposit)
 
@@ -137,8 +130,8 @@ func main() {
 						continue
 					}
 					openPincode(bot, update.Message, "cotpay")
-                default:
-                    msg := tgbotapi.NewMessage(update.Message.Chat.ID, "defaut !!!!!!!!!!!!")
+				default:
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "defaut !!!!!!!!!!!!")
 					bot.Send(msg)
 				}
 			}
@@ -203,11 +196,11 @@ func main() {
 					}
 
 					if pincode == userPasswd {
-						inputTranferStatus <- "ok"
+						inputTranfer <- "ok"
 						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Do tranfer")
 						bot.Send(msg)
 					} else {
-						inputTranferStatus <- "clear"
+						inputTranfer <- "clear"
 						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Wrong pincode, please do again")
 						bot.Send(msg)
 						homePage(bot, update)
@@ -294,11 +287,11 @@ func main() {
 						continue
 					}
 					if pincode == userPasswd {
-						inputCotpayStatus <- "ok"
+						inputCotpay <- "ok"
 						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Do cotpay")
 						bot.Send(msg)
 					} else {
-						inputCotpayStatus <- "clear"
+						inputCotpay <- "clear"
 						msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Wrong pincode, please do again")
 						bot.Send(msg)
 						homePage(bot, update)
@@ -376,23 +369,22 @@ func getTranferReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		log.Panic(err)
 	}
 
-	receiverInt, _ := strconv.Atoi(receiver)
 	msg = tgbotapi.NewMessage(message.Chat.ID, "Tranfer value")
 	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
 	if _, err := bot.Send(msg); err != nil {
 		panic(err)
 	}
 	sender := int(message.From.ID)
-	inputTranferSender <- sender
-	inputTranferReceiver <- receiverInt
+	inputTranfer <- "clear"
+	inputTranfer <- strconv.Itoa(sender)
+	inputTranfer <- receiver
 }
 
 func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "checking value")
 	bot.Send(msg)
 	if !manage.IsNumeric(update.Message.Text) {
-        inputTranferValue <- 0
-        inputTranferStatus <- "fail"
+		inputTranfer <- "clear"
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
 		bot.Send(msg)
 		homePage(bot, update)
@@ -410,8 +402,7 @@ func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 				log.Panic(err)
 			}
 
-			valueInt, _ := strconv.Atoi(value)
-			inputTranferValue <- valueInt
+			inputTranfer <- value
 		}
 	}
 	return nil
@@ -424,11 +415,11 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		log.Panic(err)
 	}
 
-	receiverInt, _ := strconv.Atoi(receiver)
-	sender := int(message.From.ID)
-	inputCotpaySender <- sender
-	inputCotpaySenderUsername <- message.From.UserName
-	inputCotpayReceiver <- receiverInt
+	sender := strconv.Itoa(int(message.From.ID))
+    inputCotpay <- "clear"
+	inputCotpay <- sender
+	inputCotpay <- message.From.UserName
+	inputCotpay <- receiver
 
 	msg = tgbotapi.NewMessage(message.Chat.ID, "Cotpay value")
 	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
@@ -439,8 +430,7 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 	if !manage.IsNumeric(message.Text) {
-        inputCotpayValue <- 0
-        inputCotpayStatus <- "fail"
+		inputCotpay <- "clear"
 		msg := tgbotapi.NewMessage(message.Chat.ID, "Invalid value, value must be number")
 		bot.Send(msg)
 		return errors.New("invalid value")
@@ -457,7 +447,7 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 				log.Panic(err)
 			}
 
-			inputCotpayValue <- valueInt
+			inputCotpay <- value
 		}
 	}
 	return nil
