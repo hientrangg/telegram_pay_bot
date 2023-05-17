@@ -49,7 +49,7 @@ func AddTransaction(db *sql.DB, t *Transaction) (int, error) {
 	}
 	defer stmt.Close()
 
-	t.ID, _ = randUID()
+	t.ID, _ = RandUID()
 	_, err = stmt.Exec(t.ID, t.Type, t.Sender, t.Receiver, t.Amount, t.Status)
 	if err != nil {
 		tx.Rollback()
@@ -172,7 +172,7 @@ func FilterTransactionsSender(db *sql.DB, status string, sender int) ([]Transact
 	return txns, nil
 }
 
-func randUID() (int, error) {
+func RandUID() (int, error) {
 	randomInt, err := rand.Int(rand.Reader, big.NewInt(1000000))
 	if err != nil {
 		return 0, err

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -19,7 +18,8 @@ func InitUserDB(dbpath string) (*sql.DB, error) {
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
 			uid INTEGER PRIMARY KEY,
-			passwd INTEGER NOT NULL,
+			username TEXT NOT NULL,
+			passwd TEXT NOT NULL,
 			value INTEGER NOT NULL,
 			lockvalue INTEGER NOT NULL,
 			allowvalue INTEGER NOT NULL
@@ -32,19 +32,18 @@ func InitUserDB(dbpath string) (*sql.DB, error) {
 	return db, nil
 }
 
-func AddUser(db *sql.DB, uid, value int, pincode string) error {
+func AddUser(db *sql.DB, uid, value int, username, pincode string) error {
 	stmt, err := db.Prepare(`
-		INSERT INTO users (uid, passwd, value, lockvalue, allowvalue)
-		VALUES (?, ?, ?, 0, ?)
+		INSERT INTO users (uid, username, passwd, value, lockvalue, allowvalue)
+		VALUES (?, ?, ?, ?, 0, ?)
 	`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	passwd, _ := strconv.Atoi(pincode)
 	allowvalue := value
-	_, err = stmt.Exec(uid, passwd, value, allowvalue)
+	_, err = stmt.Exec(uid, username, pincode, value, allowvalue)
 	if err != nil {
 		return err
 	}
@@ -143,7 +142,7 @@ func TranferLockValue(db *sql.DB, uid, value int) error {
 	return tx.Commit()
 }
 
-func QueryUser(db *sql.DB, uid int) (int, int, int, error) {
+func QueryUserValue(db *sql.DB, uid int) (int, int, int, error) {
 	var value, lockValue, allowValue int
 	err := db.QueryRow("SELECT value, lockvalue, allowvalue FROM users WHERE uid=?", uid).Scan(&value, &lockValue, &allowValue)
 	if err != nil {
@@ -156,7 +155,7 @@ func QueryUser(db *sql.DB, uid int) (int, int, int, error) {
 }
 
 func QueryPasswd(db *sql.DB, uid int) (string, error) {
-	var passwd int 
+	var passwd string 
 	err := db.QueryRow("SELECT passwd FROM users WHERE uid=?", uid).Scan(&passwd)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -165,5 +164,33 @@ func QueryPasswd(db *sql.DB, uid int) (string, error) {
 		log.Fatalf("error querying user: %v", err)
 	}
 
-	return strconv.Itoa(passwd), nil
+	return passwd, nil
+}
+
+func QueryUid(db *sql.DB, username string) (int, error) {
+	var uid int 
+	err := db.QueryRow("SELECT uid FROM users WHERE username=?", username).Scan(&uid)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0 ,fmt.Errorf("username not found")
+		}
+		log.Fatalf("error querying username: %v", err)
+	}
+
+	return uid, nil
+}
+
+func UpdateUid(db *sql.DB, uid int, pincode, username string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	
+	_, err = tx.Exec(`UPDATE users SET uid = ?, passwd = ? WHERE username = ?`, uid, pincode, username)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }

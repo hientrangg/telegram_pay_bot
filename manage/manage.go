@@ -154,7 +154,7 @@ func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan string, outputC
 }
 
 func DoGetStatus(db *sql.DB, Uid int) (UserData, error) {
-	value, lockValue, allowValue, err := database.QueryUser(db, Uid)
+	value, lockValue, allowValue, err := database.QueryUserValue(db, Uid)
 	if err != nil {
 		return UserData{Uid: 0, Value: 0, Lock_value: 0, Allow_value: 0}, err
 	}
@@ -180,8 +180,8 @@ func DoTranfer(userDb *sql.DB, historyDb *sql.DB, sender, receiver, amount int) 
 	return txID, nil
 }
 
-func DoRegister(db *sql.DB, uid int, pincode string) error {
-	err := database.AddUser(db, uid, 0, pincode)
+func DoRegister(db *sql.DB, uid int, username, pincode string) error {
+	err := database.AddUser(db, uid, 0, username, pincode)
 	if err != nil {
 		return err
 	}

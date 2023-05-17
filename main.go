@@ -112,14 +112,17 @@ func main() {
 					openPincode(bot, update.Message, "deposit")
 
 				case "Tranfer receiver UID":
-					getTranferReceiver(bot, update.Message)
+					getTranferReceiverUID(bot, update.Message)
+
+				case "Tranfer receiver username":
+					getTranferReceiverUsername(bot, update.Message)
 
 				case "Tranfer value":
 					err := getTranferValue(bot, update)
 					if err != nil {
 						continue
 					}
-					openPincode(bot, update.Message, "tranfer")
+					openPincode(bot, update.Message, "tranferUid")
 
 				case "Cotpay receiver UID":
 					getCotpayReceiver(bot, update.Message)
@@ -185,6 +188,20 @@ func main() {
 					}
 				}
 			case "tranfer":
+				text := "CHOOSE TRANFER TYPE"
+				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, text)
+				msg.ReplyMarkup = util.TranferKeyboard
+				bot.Send(msg)
+
+			case "tranferUsername":
+				if update.CallbackQuery.Message.Text == "Enter pincode" {
+
+				} else {
+					msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Tranfer receiver username")
+					msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+					bot.Send(msg)
+				}
+			case "tranferUid":
 				if update.CallbackQuery.Message.Text == "Enter pincode" {
 					inputPincode <- update.CallbackQuery.Data
 					pincode = <-outputPincode
@@ -270,11 +287,10 @@ func main() {
 					inputPincode <- update.CallbackQuery.Data
 					pincode = <-outputPincode
 					register(bot, update.CallbackQuery, pincode)
+					homePage(bot, update)
 				} else {
 					openPincode(bot, update.CallbackQuery.Message, "register")
 				}
-
-				homePage(bot, update)
 
 			case "cotpay":
 				if update.CallbackQuery.Message.Text == "Enter pincode" {
@@ -347,22 +363,24 @@ func main() {
 func homePage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	if update.CallbackQuery != nil {
 		msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "*** E-WALLET")
-		user := int(update.CallbackQuery.From.ID)
-		userData, _ := manage.DoGetStatus(userDb, user)
-		StartKeyBoard := util.InitStartKeyboard(user, userData.Value)
+		userUID := int(update.CallbackQuery.From.ID)
+		userName := update.CallbackQuery.From.UserName
+		userData, _ := manage.DoGetStatus(userDb, userUID)
+		StartKeyBoard := util.InitStartKeyboard(userUID, userName, userData.Value)
 		msg.ReplyMarkup = StartKeyBoard
 		bot.Send(msg)
 	} else {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "*** E-WALLET")
-		user := int(update.Message.From.ID)
-		userData, _ := manage.DoGetStatus(userDb, user)
-		StartKeyBoard := util.InitStartKeyboard(user, userData.Value)
+		userUID := int(update.Message.From.ID)
+		userName := update.Message.From.UserName
+		userData, _ := manage.DoGetStatus(userDb, userUID)
+		StartKeyBoard := util.InitStartKeyboard(userUID, userName, userData.Value)
 		msg.ReplyMarkup = StartKeyBoard
 		bot.Send(msg)
 	}
 }
 
-func getTranferReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func getTranferReceiverUID(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	receiver := message.Text
 	msg := tgbotapi.NewMessage(message.Chat.ID, "Receiver is "+receiver)
 	if _, err := bot.Send(msg); err != nil {
@@ -378,6 +396,29 @@ func getTranferReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	inputTranfer <- "clear"
 	inputTranfer <- strconv.Itoa(sender)
 	inputTranfer <- receiver
+}
+
+func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	receiver := message.Text
+	msg := tgbotapi.NewMessage(message.Chat.ID, "Receiver is "+receiver)
+	bot.Send(msg)
+
+	uid, err := database.QueryUid(userDb, receiver)
+
+	if err != nil {
+		uid, _ = database.RandUID()
+		uidstr := "11111" + strconv.Itoa(uid)
+		uid, _ = strconv.Atoi(uidstr)
+		manage.DoRegister(userDb, uid, receiver, "00000")
+	}
+
+	msg = tgbotapi.NewMessage(message.Chat.ID, "Tranfer value")
+	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+	bot.Send(msg)
+	sender := int(message.From.ID)
+	inputTranfer <- "clear"
+	inputTranfer <- strconv.Itoa(sender)
+	inputTranfer <- strconv.Itoa(uid)
 }
 
 func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
@@ -416,7 +457,7 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	}
 
 	sender := strconv.Itoa(int(message.From.ID))
-    inputCotpay <- "clear"
+	inputCotpay <- "clear"
 	inputCotpay <- sender
 	inputCotpay <- message.From.UserName
 	inputCotpay <- receiver
@@ -472,17 +513,24 @@ func getBalance(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 
 func register(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, pincode string) {
 	user := int(callback.From.ID)
-	err := manage.DoRegister(userDb, user, pincode)
-	if err != nil {
-		text := "your UID is " + strconv.Itoa(user) + " error while register, please try again: " + err.Error()
-		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
-		bot.Send(msg)
+	username := callback.From.UserName
+	uid, _ := database.QueryUid(userDb, username)
+
+	if uid != user {
+        database.UpdateUid(userDb, user, pincode, username)
 	} else {
+		err := manage.DoRegister(userDb, user, username, pincode)
+		if err != nil {
+			text := "your UID is " + strconv.Itoa(user) + " error while register, please try again: " + err.Error()
+			msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
+			bot.Send(msg)
+		} else {
 
-		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Register Successful")
+			msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Register Successful")
 
-		if _, err := bot.Send(msg); err != nil {
-			log.Panic(err)
+			if _, err := bot.Send(msg); err != nil {
+				log.Panic(err)
+			}
 		}
 	}
 }
