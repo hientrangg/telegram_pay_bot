@@ -19,7 +19,6 @@ func InitUserDB(dbpath string) (*sql.DB, error) {
 		CREATE TABLE IF NOT EXISTS users (
 			uid INTEGER PRIMARY KEY,
 			username TEXT NOT NULL,
-			passwd TEXT NOT NULL,
 			value INTEGER NOT NULL,
 			lockvalue INTEGER NOT NULL,
 			allowvalue INTEGER NOT NULL
@@ -32,10 +31,10 @@ func InitUserDB(dbpath string) (*sql.DB, error) {
 	return db, nil
 }
 
-func AddUser(db *sql.DB, uid, value int, username, pincode string) error {
+func AddUser(db *sql.DB, uid, value int, username string) error {
 	stmt, err := db.Prepare(`
-		INSERT INTO users (uid, username, passwd, value, lockvalue, allowvalue)
-		VALUES (?, ?, ?, ?, 0, ?)
+		INSERT INTO users (uid, username, value, lockvalue, allowvalue)
+		VALUES (?, ?, ?, 0, ?)
 	`)
 	if err != nil {
 		return err
@@ -43,7 +42,7 @@ func AddUser(db *sql.DB, uid, value int, username, pincode string) error {
 	defer stmt.Close()
 
 	allowvalue := value
-	_, err = stmt.Exec(uid, username, pincode, value, allowvalue)
+	_, err = stmt.Exec(uid, username, value, allowvalue)
 	if err != nil {
 		return err
 	}
@@ -154,19 +153,6 @@ func QueryUserValue(db *sql.DB, uid int) (int, int, int, error) {
 	return value, lockValue, allowValue, nil
 }
 
-func QueryPasswd(db *sql.DB, uid int) (string, error) {
-	var passwd string 
-	err := db.QueryRow("SELECT passwd FROM users WHERE uid=?", uid).Scan(&passwd)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "nil" ,fmt.Errorf("user not found")
-		}
-		log.Fatalf("error querying user: %v", err)
-	}
-
-	return passwd, nil
-}
-
 func QueryUid(db *sql.DB, username string) (int, error) {
 	var uid int 
 	err := db.QueryRow("SELECT uid FROM users WHERE username=?", username).Scan(&uid)
@@ -180,13 +166,13 @@ func QueryUid(db *sql.DB, username string) (int, error) {
 	return uid, nil
 }
 
-func UpdateUid(db *sql.DB, uid int, pincode, username string) error {
+func UpdateUid(db *sql.DB, uid int, username string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	
-	_, err = tx.Exec(`UPDATE users SET uid = ?, passwd = ? WHERE username = ?`, uid, pincode, username)
+	_, err = tx.Exec(`UPDATE users SET uid = ? WHERE username = ?`, uid, username)
 	if err != nil {
 		tx.Rollback()
 		return err

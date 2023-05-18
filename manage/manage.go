@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
-	"strings"
 	"unicode"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -18,6 +17,17 @@ type UserData struct {
 	Value       int
 	Allow_value int
 	Lock_value  int
+}
+
+type TranferParam struct {
+	Sender   int
+	Receiver int
+	Value    int
+}
+
+type DepositParam struct {
+	Uid   int
+	Value int
 }
 
 const (
@@ -48,12 +58,12 @@ func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, inpu
 
 		value := <-input
 		fmt.Println("------------------------------- valua is " + value + " --------------------------------------------")
-		if value == "clear"{
+		if value == "clear" {
 			continue
 		}
 		valueInt, _ := strconv.Atoi(value)
 
-		status := <- input
+		status := <-input
 		if status != "ok" {
 			continue
 		}
@@ -84,39 +94,11 @@ func TranferCotpay(userDb *sql.DB, t database.Transaction) error {
 	return nil
 }
 
-func Tranfer(userDb *sql.DB, historyDb *sql.DB, input chan string, output chan string) {
+func Tranfer(userDb *sql.DB, historyDb *sql.DB, input chan TranferParam, output chan string) {
 	for {
-		sender := <-input
-		fmt.Println("------------------------------- sender is " + sender + " --------------------------------------------")
-		if sender == "clear" {
-			continue
-		}
-		senderInt,_ := strconv.Atoi(sender)
-		
+		tranferParam := <- input
 
-		receiver := <-input
-		fmt.Println("------------------------------- receiver is " + receiver + " --------------------------------------------")
-		if receiver == "clear" {
-			continue
-		}
-		receiverInt, _ := strconv.Atoi(receiver)
-		
-
-		value := <-input
-		fmt.Println("------------------------------- value is " + value + " --------------------------------------------")
-		if value == "clear" {
-			continue
-		}
-		valueInt, _ := strconv.Atoi(value)
-		
-
-		status := <- input
-		fmt.Println("------------------------------- status is " + status + " --------------------------------------------")
-		if status != "ok" {
-			continue
-		}
-
-		txIDInt, err := DoTranfer(userDb, historyDb, senderInt, receiverInt, valueInt)
+		txIDInt, err := DoTranfer(userDb, historyDb, tranferParam.Sender, tranferParam.Receiver, tranferParam.Value)
 		if err != nil {
 			status := "error"
 			output <- status
@@ -127,25 +109,23 @@ func Tranfer(userDb *sql.DB, historyDb *sql.DB, input chan string, output chan s
 		output <- txID
 	}
 }
-func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan string, outputChan chan string) {
+func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, outputChan chan string) {
 	for {
-		Uid := <-inputChan
-		amount := <-inputChan
-		status := <-inputChan
-		if status != "ok" {
-			continue
-		}
-		UidInt, _ := strconv.Atoi(Uid)
-		amountInt, _ := strconv.Atoi(amount)
-		err := database.UpdateValue(userdb, UidInt, amountInt)
+		depositParam := <-inputChan
+
+		err := database.UpdateValue(userdb, depositParam.Uid, depositParam.Value)
 		if err != nil {
-			outputChan <- "error"
+			outputChan <- "error!" 
 			continue
 		}
 
-		t := database.Transaction{Type: "deposit", Sender: UidInt, Receiver: UidInt, Amount: amountInt, Status: "Done"}
+		t := database.Transaction{Type: "deposit", Sender: depositParam.Uid, Receiver: depositParam.Uid, Amount: depositParam.Value, Status: "Done"}
 
-		txID, _ := database.AddTransaction(historyDb, &t)
+		txID, err := database.AddTransaction(historyDb, &t)
+		if err != nil {
+			outputChan <- "error" 
+			continue
+		}
 
 		txIDInt := strconv.Itoa(txID)
 
@@ -180,8 +160,8 @@ func DoTranfer(userDb *sql.DB, historyDb *sql.DB, sender, receiver, amount int) 
 	return txID, nil
 }
 
-func DoRegister(db *sql.DB, uid int, username, pincode string) error {
-	err := database.AddUser(db, uid, 0, username, pincode)
+func DoRegister(db *sql.DB, uid int, username string) error {
+	err := database.AddUser(db, uid, 0, username)
 	if err != nil {
 		return err
 	}
@@ -203,41 +183,6 @@ func DoCotPay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, sender in
 	return txID, nil
 }
 
-func GetPincode(inputchan chan string, output chan string) {
-	var pincode string
-	for {
-		num := <-inputchan
-
-		switch num {
-		case "0":
-			pincode = pincode + num
-		case "1":
-			pincode = pincode + num
-		case "2":
-			pincode = pincode + num
-		case "3":
-			pincode = pincode + num
-		case "4":
-			pincode = pincode + num
-		case "5":
-			pincode = pincode + num
-		case "6":
-			pincode = pincode + num
-		case "7":
-			pincode = pincode + num
-		case "8":
-			pincode = pincode + num
-		case "9":
-			pincode = pincode + num
-		case "<":
-			pincode = strings.TrimSuffix(pincode, string(pincode[len(pincode)-1]))
-		default:
-			output <- pincode
-			pincode = ""
-		}
-	}
-}
-
 func IsNumeric(s string) bool {
 	for _, char := range s {
 		if !unicode.IsDigit(char) {
@@ -246,4 +191,3 @@ func IsNumeric(s string) bool {
 	}
 	return true
 }
-

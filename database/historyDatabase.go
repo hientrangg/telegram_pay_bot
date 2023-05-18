@@ -179,3 +179,4 @@ func RandUID() (int, error) {
 	}
 	return int(randomInt.Int64()), nil
 }
+
