@@ -20,7 +20,7 @@ const (
 )
 
 var (
-	cache         = sync.Map{}
+	Txcache       = sync.Map{}
 	userDb        *sql.DB
 	historyDb     *sql.DB
 	inputTranfer  = make(chan manage.TranferParam)
@@ -36,6 +36,7 @@ func init() {
 	userDb, _ = database.InitUserDB("./db/userData.sqlite")
 	historyDb, _ = database.InitHistodyDB("./db/history.sqlite")
 }
+
 func main() {
 	//init bot to get update and send message
 	bot := initbot.Init(TELEGRAM_APITOKEN)
@@ -57,6 +58,7 @@ func main() {
 			if update.Message.IsCommand() {
 				switch update.Message.Command() {
 				case "start":
+					register(bot, update.Message)
 					homePage(bot, update)
 				default:
 					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "I don't know this command, please try again")
@@ -135,6 +137,7 @@ func main() {
 				case "Tranfer value":
 					err := getTranferValue(bot, update)
 					if err != nil {
+						homePage(bot, update)
 						continue
 					}
 					homePage(bot, update)
@@ -146,9 +149,10 @@ func main() {
 					if err != nil {
 						msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
 						bot.Send(msg)
+						homePage(bot, update)
 						continue
 					}
-
+					homePage(bot, update)
 				default:
 					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "defaut !!!!!!!!!!!!")
 					bot.Send(msg)
@@ -180,11 +184,6 @@ func main() {
 				}
 			case "status":
 				getBalance(bot, update.CallbackQuery)
-				homePage(bot, update)
-
-			case "register":
-
-				register(bot, update.CallbackQuery)
 				homePage(bot, update)
 
 			case "tranfer":
@@ -281,7 +280,7 @@ func getTranferReceiverUID(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		Amount:   0,
 		Status:   "",
 	}
-	cache.Store(sender, tx)
+	Txcache.Store(sender, tx)
 }
 
 func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
@@ -298,9 +297,6 @@ func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 		manage.DoRegister(userDb, uid, receiver)
 	}
 
-	msg = tgbotapi.NewMessage(message.Chat.ID, "Tranfer value")
-	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
-	bot.Send(msg)
 	sender := int(message.From.ID)
 	tx := database.Transaction{
 		ID:       sender,
@@ -310,14 +306,16 @@ func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 		Amount:   0,
 		Status:   "",
 	}
-	cache.Store(sender, tx)
+	Txcache.Store(sender, tx)
+	msg = tgbotapi.NewMessage(message.Chat.ID, "Tranfer value")
+	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+	bot.Send(msg)
 }
 
 func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 	if !manage.IsNumeric(update.Message.Text) {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
 		bot.Send(msg)
-		homePage(bot, update)
 		return errors.New("invalid value")
 	} else {
 		sender := int(update.Message.From.ID)
@@ -331,7 +329,7 @@ func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Tranfer value "+value)
 			bot.Send(msg)
 
-			cacheValue, ok := cache.Load(sender)
+			cacheValue, ok := Txcache.Load(sender)
 			if !ok {
 				return errors.New("pending tx not found")
 			}
@@ -343,7 +341,7 @@ func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 				Value:    tx.Amount,
 			}
 			inputTranfer <- tranferParam
-			cache.Delete(sender)
+			Txcache.Delete(sender)
 			txID := <-outputTranfer
 			if txID == "error" {
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "error while do tranfer, please try again")
@@ -374,7 +372,7 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		Value:    0,
 	}
 
-	cache.Store(sender, tx)
+	Txcache.Store(sender, tx)
 
 	msg = tgbotapi.NewMessage(message.Chat.ID, "Cotpay value")
 	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
@@ -402,7 +400,7 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 			}
 
 			sender := int(message.From.ID)
-			cacheValue, ok := cache.Load(sender)
+			cacheValue, ok := Txcache.Load(sender)
 			if !ok {
 				return errors.New("pending tx not found")
 			}
@@ -417,7 +415,7 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 			inputCotpay <- cotpayParam
 			msg = tgbotapi.NewMessage(message.Chat.ID, "Sending cotpay request")
 			bot.Send(msg)
-			cache.Delete(sender)
+			Txcache.Delete(sender)
 			txID := <-outputCotpay
 			if txID == "error" {
 				msg := tgbotapi.NewMessage(message.Chat.ID, "error while send cotpay request, please try again")
@@ -449,37 +447,26 @@ func getBalance(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 	}
 }
 
-func register(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
-	user := int(callback.From.ID)
-	username := callback.From.UserName
+func register(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	user := int(message.From.ID)
+	username := message.From.UserName
 	uid, err := database.QueryUid(userDb, username)
 	if err != nil {
 		err := manage.DoRegister(userDb, user, username)
 		if err != nil {
-			text := " error while register, please try again: " + err.Error()
-			msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
+			text := "error while register, please try again: "
+			msg := tgbotapi.NewMessage(message.Chat.ID, text)
 			bot.Send(msg)
 		} else {
-			msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Register Successful")
+			msg := tgbotapi.NewMessage(message.Chat.ID, "Register Successful")
 			bot.Send(msg)
 		}
 	} else {
-
 		if uid != user {
 			database.UpdateUid(userDb, user, username)
-			msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Register Successful !!!")
+			msg := tgbotapi.NewMessage(message.Chat.ID, "Register Successful !!!")
 			bot.Send(msg)
-		} else {
-			err := manage.DoRegister(userDb, user, username)
-			if err != nil {
-				text := " error while register, please try again: " + err.Error()
-				msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
-				bot.Send(msg)
-			} else {
-				msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Register Successful")
-				bot.Send(msg)
-			}
-		}
+		} 
 	}
 }
 
