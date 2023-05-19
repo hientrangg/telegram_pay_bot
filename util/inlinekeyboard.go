@@ -29,9 +29,6 @@ var TranferKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 func InitStartKeyboard(uid int,  username string, balance int) tgbotapi.InlineKeyboardMarkup {
 	var keyboard = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("REGISTER", "register"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("USERNAME: " + username, "username"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
