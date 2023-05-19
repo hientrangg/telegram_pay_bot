@@ -25,7 +25,7 @@ var (
 	historyDb     *sql.DB
 	inputTranfer  = make(chan manage.TranferParam)
 	outputTranfer = make(chan string)
-	inputCotpay   = make(chan string)
+	inputCotpay   = make(chan manage.CotpayParam)
 	outputCotpay  = make(chan string)
 
 	inputDeposit  = make(chan manage.DepositParam)
@@ -97,7 +97,7 @@ func main() {
 						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit successful, txId: "+status)
 						bot.Send(msg)
 					}
-					 homePage(bot, update)
+					homePage(bot, update)
 				case "Withdraw value":
 					if !manage.IsNumeric(update.Message.Text) {
 						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
@@ -144,6 +144,8 @@ func main() {
 				case "Cotpay value":
 					err := getCotpayValue(bot, update.Message)
 					if err != nil {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
+						bot.Send(msg)
 						continue
 					}
 
@@ -362,11 +364,17 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		log.Panic(err)
 	}
 
-	sender := strconv.Itoa(int(message.From.ID))
-	inputCotpay <- "clear"
-	inputCotpay <- sender
-	inputCotpay <- message.From.UserName
-	inputCotpay <- receiver
+	sender := int(message.From.ID)
+	receiverInt, _ := strconv.Atoi(receiver)
+
+	tx := manage.CotpayParam{
+		Sender:   sender,
+		Username: message.From.UserName,
+		Receiver: receiverInt,
+		Value:    0,
+	}
+
+	cache.Store(sender, tx)
 
 	msg = tgbotapi.NewMessage(message.Chat.ID, "Cotpay value")
 	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
@@ -377,7 +385,6 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 	if !manage.IsNumeric(message.Text) {
-		inputCotpay <- "clear"
 		msg := tgbotapi.NewMessage(message.Chat.ID, "Invalid value, value must be number")
 		bot.Send(msg)
 		return errors.New("invalid value")
@@ -394,7 +401,32 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 				log.Panic(err)
 			}
 
-			inputCotpay <- value
+			sender := int(message.From.ID)
+			cacheValue, ok := cache.Load(sender)
+			if !ok {
+				return errors.New("pending tx not found")
+			}
+			tx, _ := cacheValue.(manage.CotpayParam)
+			tx.Value = valueInt
+			cotpayParam := manage.CotpayParam{
+				Sender:   tx.Sender,
+				Username: tx.Username,
+				Receiver: tx.Receiver,
+				Value:    tx.Value,
+			}
+			inputCotpay <- cotpayParam
+			msg = tgbotapi.NewMessage(message.Chat.ID, "Sending cotpay request")
+			bot.Send(msg)
+			cache.Delete(sender)
+			txID := <-outputCotpay
+			if txID == "error" {
+				msg := tgbotapi.NewMessage(message.Chat.ID, "error while send cotpay request, please try again")
+				bot.Send(msg)
+			} else {
+				msg := tgbotapi.NewMessage(message.Chat.ID, "Send cotpay request success, txID is: "+txID)
+				bot.Send(msg)
+			}
+
 		}
 	}
 	return nil

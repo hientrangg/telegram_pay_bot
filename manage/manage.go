@@ -2,7 +2,6 @@ package manage
 
 import (
 	"database/sql"
-	"fmt"
 	"strconv"
 	"unicode"
 
@@ -19,6 +18,13 @@ type UserData struct {
 	Lock_value  int
 }
 
+type CotpayParam struct {
+	Sender   int
+	Username string
+	Receiver int
+	Value    int
+}
+
 type TranferParam struct {
 	Sender   int
 	Receiver int
@@ -30,45 +36,15 @@ type DepositParam struct {
 	Value int
 }
 
+
 const (
 	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
 )
 
-func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, input, output chan string) {
+func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, input chan CotpayParam, output chan string) {
 	for {
-		sender := <-input
-		fmt.Println("------------------------------- sender is " + sender + " --------------------------------------------")
-		if sender == "clear" {
-			continue
-		}
-		senderInt, _ := strconv.Atoi(sender)
-
-		senderUsername := <-input
-		fmt.Println("------------------------------- senderusername is " + senderUsername + " --------------------------------------------")
-		if senderUsername == "clear" {
-			continue
-		}
-
-		receiver := <-input
-		fmt.Println("------------------------------- receiver is " + receiver + " --------------------------------------------")
-		if receiver == "clear" {
-			continue
-		}
-		receiverInt, _ := strconv.Atoi(receiver)
-
-		value := <-input
-		fmt.Println("------------------------------- valua is " + value + " --------------------------------------------")
-		if value == "clear" {
-			continue
-		}
-		valueInt, _ := strconv.Atoi(value)
-
-		status := <-input
-		if status != "ok" {
-			continue
-		}
-
-		txIDInt, err := DoCotPay(bot, userdb, historyDb, senderInt, senderUsername, receiverInt, valueInt)
+		cotpayParam := <- input
+		txIDInt, err := DoCotPay(bot, userdb, historyDb, cotpayParam.Sender, cotpayParam.Username, cotpayParam.Receiver, cotpayParam.Value)
 		if err != nil {
 			status := "error"
 			output <- status
@@ -96,7 +72,7 @@ func TranferCotpay(userDb *sql.DB, t database.Transaction) error {
 
 func Tranfer(userDb *sql.DB, historyDb *sql.DB, input chan TranferParam, output chan string) {
 	for {
-		tranferParam := <- input
+		tranferParam := <-input
 
 		txIDInt, err := DoTranfer(userDb, historyDb, tranferParam.Sender, tranferParam.Receiver, tranferParam.Value)
 		if err != nil {
@@ -115,7 +91,7 @@ func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, o
 
 		err := database.UpdateValue(userdb, depositParam.Uid, depositParam.Value)
 		if err != nil {
-			outputChan <- "error!" 
+			outputChan <- "error!"
 			continue
 		}
 
@@ -123,7 +99,7 @@ func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, o
 
 		txID, err := database.AddTransaction(historyDb, &t)
 		if err != nil {
-			outputChan <- "error" 
+			outputChan <- "error"
 			continue
 		}
 
