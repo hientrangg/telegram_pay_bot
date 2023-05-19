@@ -240,7 +240,7 @@ func main() {
 
 func homePage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	if update.CallbackQuery != nil {
-		msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "*** E-WALLET")
+		msg := tgbotapi.NewMessage(update.CallbackQuery.From.ID, "*** E-WALLET")
 		userUID := int(update.CallbackQuery.From.ID)
 		userName := update.CallbackQuery.From.UserName
 		userData, _ := manage.DoGetStatus(userDb, userUID)
@@ -248,7 +248,7 @@ func homePage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		msg.ReplyMarkup = StartKeyBoard
 		bot.Send(msg)
 	} else {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "*** E-WALLET")
+		msg := tgbotapi.NewMessage(update.Message.From.ID, "*** E-WALLET")
 		userUID := int(update.Message.From.ID)
 		userName := update.Message.From.UserName
 		userData, _ := manage.DoGetStatus(userDb, userUID)
