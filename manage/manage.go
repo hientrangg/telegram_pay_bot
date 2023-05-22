@@ -48,6 +48,7 @@ func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, inpu
 		if err != nil {
 			status := "error"
 			output <- status
+			continue
 		}
 
 		txID := strconv.Itoa(txIDInt)
@@ -78,6 +79,7 @@ func Tranfer(userDb *sql.DB, historyDb *sql.DB, input chan TranferParam, output 
 		if err != nil {
 			status := "error"
 			output <- status
+			continue
 		}
 
 		txID := strconv.Itoa(txIDInt)
@@ -91,7 +93,7 @@ func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, o
 
 		err := database.UpdateValue(userdb, depositParam.Uid, depositParam.Value)
 		if err != nil {
-			outputChan <- "error!"
+			outputChan <- "error"
 			continue
 		}
 

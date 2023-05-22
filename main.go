@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
+	TELEGRAM_APITOKEN = "6236521521:AAHLlRtOQHvns5DXlU28hCiIU0dYch2ByzU"
 )
 
 var (
@@ -116,7 +116,7 @@ func main() {
 					}
 					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value is "+update.Message.Text)
 					bot.Send(msg)
-					depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: -valueInt}
+					depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: 0 - valueInt}
 					inputDeposit <- depositParam
 					status := <-outputDeposit
 
@@ -129,8 +129,12 @@ func main() {
 					}
 					homePage(bot, update)
 				case "Tranfer receiver UID":
-					getTranferReceiverUID(bot, update.Message)
-
+					err := getTranferReceiverUID(bot, update.Message)
+					if err != nil {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
+						bot.Send(msg)
+						homePage(bot, update)
+					}
 				case "Tranfer receiver username":
 					getTranferReceiverUsername(bot, update.Message)
 
@@ -258,8 +262,12 @@ func homePage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	}
 }
 
-func getTranferReceiverUID(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func getTranferReceiverUID(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 	receiver := message.Text
+	if !manage.IsNumeric(message.Text) {
+		return errors.New("invalid uid type")
+	}
+
 	msg := tgbotapi.NewMessage(message.Chat.ID, "Receiver is "+receiver)
 	if _, err := bot.Send(msg); err != nil {
 		log.Panic(err)
@@ -281,6 +289,7 @@ func getTranferReceiverUID(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		Status:   "",
 	}
 	Txcache.Store(sender, tx)
+	return nil
 }
 
 func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
@@ -340,8 +349,13 @@ func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 				Receiver: tx.Receiver,
 				Value:    tx.Amount,
 			}
+
 			inputTranfer <- tranferParam
 			Txcache.Delete(sender)
+
+			msg.Text = "Doing Tranfer"
+			bot.Send(msg)
+
 			txID := <-outputTranfer
 			if txID == "error" {
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "error while do tranfer, please try again")
@@ -575,12 +589,6 @@ func confirm_cotpay_sender(bot *tgbotapi.BotAPI, message *tgbotapi.Message) erro
 	bot.Send(msg)
 	return nil
 }
-
-// func openPincode(bot *tgbotapi.BotAPI, message *tgbotapi.Message, data string) {
-// 	msg := tgbotapi.NewMessage(message.Chat.ID, "Enter pincode")
-// 	msg.ReplyMarkup = util.InitPincodeKeyboard(data)
-// 	bot.Send(msg)
-// }
 
 func updateUsername(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) error {
 	username := callback.From.UserName
