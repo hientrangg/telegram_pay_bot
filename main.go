@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	TELEGRAM_APITOKEN = "6236521521:AAHLlRtOQHvns5DXlU28hCiIU0dYch2ByzU"
+	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
 )
 
 var (
@@ -68,64 +68,17 @@ func main() {
 			} else if update.Message.ReplyToMessage != nil {
 				switch update.Message.ReplyToMessage.Text {
 				case "Deposit value":
-					if !manage.IsNumeric(update.Message.Text) {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
-						bot.Send(msg)
+					err := deposit(bot, update)
+					if err != nil {
 						homePage(bot, update)
 						continue
-					}
-					valueInt, _ := strconv.Atoi(update.Message.Text)
-					if valueInt < 0 {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit value must > 0")
-						bot.Send(msg)
-						homePage(bot, update)
-						continue
-					}
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit value is "+update.Message.Text)
-					bot.Send(msg)
-					depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: valueInt}
-					inputDeposit <- depositParam
-					msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Doing deposit")
-					bot.Send(msg)
-					status := <-outputDeposit
-
-					if status == "error" {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Error while add tx, please try again")
-						bot.Send(msg)
-					} else if status == "error!" {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Error while update value, please try again")
-						bot.Send(msg)
-					} else {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit successful, txId: "+status)
-						bot.Send(msg)
 					}
 					homePage(bot, update)
 				case "Withdraw value":
-					if !manage.IsNumeric(update.Message.Text) {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
-						bot.Send(msg)
+					err := withdraw(bot, update)
+					if err != nil {
 						homePage(bot, update)
 						continue
-					}
-					valueInt, _ := strconv.Atoi(update.Message.Text)
-					if valueInt < 0 {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value must > 0")
-						bot.Send(msg)
-						homePage(bot, update)
-						continue
-					}
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value is "+update.Message.Text)
-					bot.Send(msg)
-					depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: 0 - valueInt}
-					inputDeposit <- depositParam
-					status := <-outputDeposit
-
-					if status == "error" {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Error while withdraw, please try again")
-						bot.Send(msg)
-					} else {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw successful")
-						bot.Send(msg)
 					}
 					homePage(bot, update)
 				case "Tranfer receiver UID":
@@ -247,7 +200,7 @@ func homePage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		msg := tgbotapi.NewMessage(update.CallbackQuery.From.ID, "*** E-WALLET")
 		userUID := int(update.CallbackQuery.From.ID)
 		userName := update.CallbackQuery.From.UserName
-		userData, _ := manage.DoGetStatus(userDb, userUID)
+		userData, _ := manage.DoGetStatus(userDb, strconv.Itoa(userUID))
 		StartKeyBoard := util.InitStartKeyboard(userUID, userName, userData.Value)
 		msg.ReplyMarkup = StartKeyBoard
 		bot.Send(msg)
@@ -255,16 +208,64 @@ func homePage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		msg := tgbotapi.NewMessage(update.Message.From.ID, "*** E-WALLET")
 		userUID := int(update.Message.From.ID)
 		userName := update.Message.From.UserName
-		userData, _ := manage.DoGetStatus(userDb, userUID)
+		userData, _ := manage.DoGetStatus(userDb, strconv.Itoa(userUID))
 		StartKeyBoard := util.InitStartKeyboard(userUID, userName, userData.Value)
 		msg.ReplyMarkup = StartKeyBoard
 		bot.Send(msg)
 	}
 }
 
+func deposit(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
+	if !util.IsNumeric(update.Message.Text) {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
+		bot.Send(msg)
+		return errors.New("invalid value")
+	}
+	value := update.Message.Text
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit value is " + value)
+	bot.Send(msg)
+	depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: value}
+	inputDeposit <- depositParam
+	msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Doing deposit")
+	bot.Send(msg)
+	status := <-outputDeposit
+
+	if status == "error" {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Error while add tx, please try again")
+		bot.Send(msg)
+	} else {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit successful, txId: "+status)
+		bot.Send(msg)
+	}
+	return nil
+}
+
+func withdraw(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
+	if !util.IsNumeric(update.Message.Text) {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
+		bot.Send(msg)
+		return errors.New("invalid value")
+	}
+	
+	value := update.Message.Text
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value is " + update.Message.Text)
+	bot.Send(msg)
+	depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: "-" + value}
+	inputDeposit <- depositParam
+	status := <-outputDeposit
+
+	if status == "error" {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Error while withdraw, please try again")
+		bot.Send(msg)
+	} else {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw successful")
+		bot.Send(msg)
+	}
+	return nil
+}
 func getTranferReceiverUID(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 	receiver := message.Text
-	if !manage.IsNumeric(message.Text) {
+	if !util.IsNumeric(message.Text) {
 		return errors.New("invalid uid type")
 	}
 
@@ -279,13 +280,12 @@ func getTranferReceiverUID(bot *tgbotapi.BotAPI, message *tgbotapi.Message) erro
 		panic(err)
 	}
 	sender := int(message.From.ID)
-	receiverInt, _ := strconv.Atoi(receiver)
 	tx := database.Transaction{
 		ID:       sender,
 		Type:     "tranfer",
-		Sender:   sender,
-		Receiver: receiverInt,
-		Amount:   0,
+		Sender:   strconv.Itoa(sender),
+		Receiver: receiver,
+		Amount:   "0",
 		Status:   "",
 	}
 	Txcache.Store(sender, tx)
@@ -300,9 +300,8 @@ func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 	uid, err := database.QueryUid(userDb, receiver)
 
 	if err != nil {
-		uid, _ = database.RandUID()
-		uidstr := "11111" + strconv.Itoa(uid)
-		uid, _ = strconv.Atoi(uidstr)
+		uidInt, _ := database.RandUID()
+		uid = "0x" + strconv.Itoa(uidInt)
 		manage.DoRegister(userDb, uid, receiver)
 	}
 
@@ -310,9 +309,9 @@ func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 	tx := database.Transaction{
 		ID:       sender,
 		Type:     "tranfer",
-		Sender:   sender,
+		Sender:   strconv.Itoa(sender),
 		Receiver: uid,
-		Amount:   0,
+		Amount:   "0",
 		Status:   "",
 	}
 	Txcache.Store(sender, tx)
@@ -322,49 +321,47 @@ func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 }
 
 func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
-	if !manage.IsNumeric(update.Message.Text) {
+	if !util.IsNumeric(update.Message.Text) {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Invalid value, value must be number")
 		bot.Send(msg)
+		sender := int(update.Message.From.ID)
+		Txcache.Delete(sender)
+
 		return errors.New("invalid value")
 	} else {
 		sender := int(update.Message.From.ID)
-		valueInt, _ := strconv.Atoi(update.Message.Text)
-		if valueInt < 0 {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "tranfer value must > 0")
-			bot.Send(msg)
-			return errors.New("invalid value")
-		} else {
-			value := update.Message.Text
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Tranfer value "+value)
-			bot.Send(msg)
 
-			cacheValue, ok := Txcache.Load(sender)
-			if !ok {
-				return errors.New("pending tx not found")
-			}
-			tx, _ := cacheValue.(database.Transaction)
-			tx.Amount = valueInt
-			tranferParam := manage.TranferParam{
-				Sender:   tx.Sender,
-				Receiver: tx.Receiver,
-				Value:    tx.Amount,
-			}
+		value := update.Message.Text
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Tranfer value "+value)
+		bot.Send(msg)
 
-			inputTranfer <- tranferParam
-			Txcache.Delete(sender)
-
-			msg.Text = "Doing Tranfer"
-			bot.Send(msg)
-
-			txID := <-outputTranfer
-			if txID == "error" {
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "error while do tranfer, please try again")
-				bot.Send(msg)
-			} else {
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "tranfer success, txID is: "+txID)
-				bot.Send(msg)
-			}
+		cacheValue, ok := Txcache.Load(sender)
+		if !ok {
+			return errors.New("pending tx not found")
 		}
+		tx, _ := cacheValue.(database.Transaction)
+		tx.Amount = value
+		tranferParam := manage.TranferParam{
+			Sender:   tx.Sender,
+			Receiver: tx.Receiver,
+			Value:    tx.Amount,
+		}
+
+		inputTranfer <- tranferParam
+		Txcache.Delete(sender)
+
+		msg.Text = "Doing Tranfer"
+		bot.Send(msg)
+
+		txID := <-outputTranfer
+		if txID == "error" {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "error while do tranfer, please try again !!!")
+			bot.Send(msg)
+		} else {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "tranfer success, txID is: "+txID)
+			bot.Send(msg)
+		}
+
 	}
 	return nil
 }
@@ -377,13 +374,12 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	}
 
 	sender := int(message.From.ID)
-	receiverInt, _ := strconv.Atoi(receiver)
 
 	tx := manage.CotpayParam{
-		Sender:   sender,
+		Sender:   strconv.Itoa(sender),
 		Username: message.From.UserName,
-		Receiver: receiverInt,
-		Value:    0,
+		Receiver: receiver,
+		Value:    "0",
 	}
 
 	Txcache.Store(sender, tx)
@@ -396,7 +392,7 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 }
 
 func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
-	if !manage.IsNumeric(message.Text) {
+	if !util.IsNumeric(message.Text) {
 		msg := tgbotapi.NewMessage(message.Chat.ID, "Invalid value, value must be number")
 		bot.Send(msg)
 		return errors.New("invalid value")
@@ -419,7 +415,7 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 				return errors.New("pending tx not found")
 			}
 			tx, _ := cacheValue.(manage.CotpayParam)
-			tx.Value = valueInt
+			tx.Value = value
 			cotpayParam := manage.CotpayParam{
 				Sender:   tx.Sender,
 				Username: tx.Username,
@@ -446,14 +442,14 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 
 func getBalance(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 	user := int(callback.From.ID)
-	userData, err := manage.DoGetStatus(userDb, user)
+	userData, err := manage.DoGetStatus(userDb, strconv.Itoa(user))
 	if err != nil {
 		text := "error while get account value, please try again"
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
 		bot.Send(msg)
 
 	} else {
-		text := "Your value is " + strconv.Itoa(userData.Value)
+		text := "Your value is " + userData.Value
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
@@ -466,7 +462,7 @@ func register(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	username := message.From.UserName
 	uid, err := database.QueryUid(userDb, username)
 	if err != nil {
-		err := manage.DoRegister(userDb, user, username)
+		err := manage.DoRegister(userDb, strconv.Itoa(user), username)
 		if err != nil {
 			text := "error while register, please try again: "
 			msg := tgbotapi.NewMessage(message.Chat.ID, text)
@@ -476,24 +472,24 @@ func register(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			bot.Send(msg)
 		}
 	} else {
-		if uid != user {
-			database.UpdateUid(userDb, user, username)
+		if uid != strconv.Itoa(user) {
+			database.UpdateUid(userDb, strconv.Itoa(user), username)
 			msg := tgbotapi.NewMessage(message.Chat.ID, "Register Successful !!!")
 			bot.Send(msg)
-		} 
+		}
 	}
 }
 
 func getLockValue(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 	user := int(callback.From.ID)
-	userData, err := manage.DoGetStatus(userDb, user)
+	userData, err := manage.DoGetStatus(userDb, strconv.Itoa(user))
 	if err != nil {
 		text := "error while get account value, please try again"
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
 		bot.Send(msg)
 	} else {
 
-		text := "Your lock value is " + strconv.Itoa(userData.Lock_value)
+		text := "Your lock value is " + userData.Lock_value
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
@@ -503,13 +499,13 @@ func getLockValue(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 
 func getAllowValue(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 	user := int(callback.From.ID)
-	userData, err := manage.DoGetStatus(userDb, user)
+	userData, err := manage.DoGetStatus(userDb, strconv.Itoa(user))
 	if err != nil {
 		text := "error while get account value, please try again"
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
 		bot.Send(msg)
 	} else {
-		text := "Your allow value is " + strconv.Itoa(userData.Allow_value)
+		text := "Your allow value is " + userData.Allow_value
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
@@ -532,7 +528,8 @@ func confirm_cotpay_receiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		msg := tgbotapi.NewMessage(message.Chat.ID, err.Error())
 		bot.Send(msg)
 	} else {
-		msg := tgbotapi.NewMessage(int64(transaction.Sender), "Recerver confirm, you need confirm to do tranfer ")
+		sender, _ := strconv.Atoi(transaction.Sender)
+		msg := tgbotapi.NewMessage(int64(sender), "Recerver confirm, you need confirm to do tranfer ")
 		bot.Send(msg)
 		msg.Text = strconv.Itoa(txID)
 		msg.ReplyMarkup = util.SenderConfirmKeyboard
@@ -549,7 +546,7 @@ func cancel_cotpay_receiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) err
 		bot.Send(msg)
 		return err
 	}
-	err = database.LockValue(userDb, transaction.Sender, -transaction.Amount)
+	err = database.LockValue(userDb, transaction.Sender, "-" + transaction.Amount)
 	if err != nil {
 		text := "error while cotpay, please try again !!"
 		msg := tgbotapi.NewMessage(message.Chat.ID, text)
@@ -559,7 +556,8 @@ func cancel_cotpay_receiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) err
 	transaction.Status = "cancel"
 	database.UpdateStatus(historyDb, *transaction)
 	text := "receiver cancel cotpay, you will return lock value"
-	msg := tgbotapi.NewMessage(int64(transaction.Sender), text)
+	sender, _ := strconv.Atoi(transaction.Sender)
+	msg := tgbotapi.NewMessage(int64(sender), text)
 	bot.Send(msg)
 	return nil
 }
@@ -593,7 +591,7 @@ func confirm_cotpay_sender(bot *tgbotapi.BotAPI, message *tgbotapi.Message) erro
 func updateUsername(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) error {
 	username := callback.From.UserName
 	uid := callback.From.ID
-	err := database.UpdateUsername(userDb, int(uid), username)
+	err := database.UpdateUsername(userDb, strconv.Itoa(int(uid)), username)
 	if err != nil {
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, err.Error())
 		bot.Send(msg)

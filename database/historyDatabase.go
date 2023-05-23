@@ -12,11 +12,15 @@ import (
 type Transaction struct {
 	ID       int
 	Type     string
-	Sender   int
-	Receiver int
-	Amount   int
+	Sender   string
+	Receiver string
+	Amount   string
 	Status   string
 }
+
+var (
+	zero = big.NewInt(0)
+)
 
 func InitHistodyDB(dbpath string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", dbpath)
@@ -27,9 +31,9 @@ func InitHistodyDB(dbpath string) (*sql.DB, error) {
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS transactions
 	                  (id INT,
 						type TEXT,
-						 sender INT,
-						  receiver INT,
-						  amount INT,
+						 sender TEXT,
+						  receiver TEXT,
+						  amount TEXT,
 						   status TEXT)`)
 	if err != nil {
 		log.Fatal(err)
@@ -59,7 +63,7 @@ func AddTransaction(db *sql.DB, t *Transaction) (int, error) {
 	return t.ID, tx.Commit()
 }
 
-func QueryTransactionsBySender(db *sql.DB, sender int) ([]Transaction, error) {
+func QueryTransactionsBySender(db *sql.DB, sender string) ([]Transaction, error) {
 	rows, err := db.Query("SELECT id, param, sender, receiver, status, amount FROM transactions WHERE sender=?", sender)
 	if err != nil {
 		return nil, err
@@ -82,7 +86,7 @@ func QueryTransactionsBySender(db *sql.DB, sender int) ([]Transaction, error) {
 	return transactions, nil
 }
 
-func QueryTransactionsByReceiver(db *sql.DB, receiver int) ([]Transaction, error) {
+func QueryTransactionsByReceiver(db *sql.DB, receiver string) ([]Transaction, error) {
 	rows, err := db.Query("SELECT id, param, sender, receiver, status, amount FROM transactions WHERE receiver=?", receiver)
 	if err != nil {
 		return nil, err
@@ -126,7 +130,7 @@ func UpdateStatus(historyDB *sql.DB, transaction Transaction) error {
 	return nil
 }
 
-func FilterTransactionsReceiver(db *sql.DB, status string, receiver int) ([]Transaction, error) {
+func FilterTransactionsReceiver(db *sql.DB, status string, receiver string) ([]Transaction, error) {
 	rows, err := db.Query("SELECT * FROM transactions WHERE status=? AND receiver=?", status, receiver)
 	if err != nil {
 		return nil, err
@@ -149,7 +153,7 @@ func FilterTransactionsReceiver(db *sql.DB, status string, receiver int) ([]Tran
 	return txns, nil
 }
 
-func FilterTransactionsSender(db *sql.DB, status string, sender int) ([]Transaction, error) {
+func FilterTransactionsSender(db *sql.DB, status string, sender string) ([]Transaction, error) {
 	rows, err := db.Query("SELECT * FROM transactions WHERE status=? AND sender=?", status, sender)
 	if err != nil {
 		return nil, err

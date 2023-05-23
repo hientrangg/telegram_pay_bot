@@ -3,7 +3,6 @@ package manage
 import (
 	"database/sql"
 	"strconv"
-	"unicode"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/hientrangg/telegram_pay_bot/database"
@@ -12,38 +11,38 @@ import (
 )
 
 type UserData struct {
-	Uid         int
-	Value       int
-	Allow_value int
-	Lock_value  int
+	Uid         string
+	Value       string
+	Allow_value string
+	Lock_value  string
 }
 
 type CotpayParam struct {
-	Sender   int
+	Sender   string
 	Username string
-	Receiver int
-	Value    int
+	Receiver string
+	Value    string
 }
 
 type TranferParam struct {
-	Sender   int
-	Receiver int
-	Value    int
+	Sender   string
+	Receiver string
+	Value    string
 }
 
 type DepositParam struct {
 	Uid   int
-	Value int
+	Value string
 }
 
-
-const (
-	TELEGRAM_APITOKEN = "6219020061:AAEHiiMLOsQ86xhnyEDBEY7wFrUIwNZ6vvQ"
-)
+type WithdrawParam struct {
+	Uid   string
+	value string
+}
 
 func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, input chan CotpayParam, output chan string) {
 	for {
-		cotpayParam := <- input
+		cotpayParam := <-input
 		txIDInt, err := DoCotPay(bot, userdb, historyDb, cotpayParam.Sender, cotpayParam.Username, cotpayParam.Receiver, cotpayParam.Value)
 		if err != nil {
 			status := "error"
@@ -57,6 +56,7 @@ func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, inpu
 	}
 }
 
+//// errorrr///////////////////////////////////
 func TranferCotpay(userDb *sql.DB, t database.Transaction) error {
 	err := database.TranferLockValue(userDb, t.Sender, t.Amount)
 	if err != nil {
@@ -91,13 +91,13 @@ func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, o
 	for {
 		depositParam := <-inputChan
 
-		err := database.UpdateValue(userdb, depositParam.Uid, depositParam.Value)
+		err := database.UpdateValue(userdb, strconv.Itoa(depositParam.Uid), depositParam.Value)
 		if err != nil {
 			outputChan <- "error"
 			continue
 		}
 
-		t := database.Transaction{Type: "deposit", Sender: depositParam.Uid, Receiver: depositParam.Uid, Amount: depositParam.Value, Status: "Done"}
+		t := database.Transaction{Type: "deposit", Sender: strconv.Itoa(depositParam.Uid), Receiver: strconv.Itoa(depositParam.Uid), Amount: depositParam.Value, Status: "Done"}
 
 		txID, err := database.AddTransaction(historyDb, &t)
 		if err != nil {
@@ -111,18 +111,19 @@ func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, o
 	}
 }
 
-func DoGetStatus(db *sql.DB, Uid int) (UserData, error) {
+func DoGetStatus(db *sql.DB, Uid string) (UserData, error) {
 	value, lockValue, allowValue, err := database.QueryUserValue(db, Uid)
 	if err != nil {
-		return UserData{Uid: 0, Value: 0, Lock_value: 0, Allow_value: 0}, err
+		return UserData{Uid: "0", Value: "0", Lock_value: "0", Allow_value: "0"}, err
 	}
 
 	User := UserData{Uid: Uid, Value: value, Lock_value: lockValue, Allow_value: allowValue}
 	return User, nil
 }
 
-func DoTranfer(userDb *sql.DB, historyDb *sql.DB, sender, receiver, amount int) (int, error) {
-	err := database.UpdateValue(userDb, sender, -amount)
+func DoTranfer(userDb *sql.DB, historyDb *sql.DB, sender, receiver, amount string) (int, error) {
+
+	err := database.UpdateValue(userDb, sender, "-" + amount)
 	if err != nil {
 		return 0, err
 	}
@@ -138,20 +139,22 @@ func DoTranfer(userDb *sql.DB, historyDb *sql.DB, sender, receiver, amount int) 
 	return txID, nil
 }
 
-func DoRegister(db *sql.DB, uid int, username string) error {
-	err := database.AddUser(db, uid, 0, username)
+func DoRegister(db *sql.DB, uid string, username string) error {
+	err := database.AddUser(db, uid, "0", username)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func DoCotPay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, sender int, senderUsername string, receiver int, amount int) (int, error) {
+func DoCotPay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, sender string, senderUsername string, receiver string, amount string) (int, error) {
+
+	receiverUid, _ := strconv.Atoi(receiver)
 	err := database.LockValue(userdb, sender, amount)
 	if err != nil {
 		return 0, err
 	}
-	msg := tgbotapi.NewMessage(int64(receiver), "You have a Cotpay from "+senderUsername+" with UID "+strconv.Itoa(sender)+". BALANCE IS "+strconv.Itoa(amount))
+	msg := tgbotapi.NewMessage(int64(receiverUid), "You have a Cotpay from "+senderUsername+" with UID "+sender+". BALANCE IS "+amount)
 	bot.Send(msg)
 	transaction := database.Transaction{Type: "cotpay", Sender: sender, Receiver: receiver, Amount: amount, Status: "pending"}
 	txID, _ := database.AddTransaction(historyDb, &transaction)
@@ -159,13 +162,4 @@ func DoCotPay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, sender in
 	msg.ReplyMarkup = util.ReceiverConfirmKeyboard
 	bot.Send(msg)
 	return txID, nil
-}
-
-func IsNumeric(s string) bool {
-	for _, char := range s {
-		if !unicode.IsDigit(char) {
-			return false
-		}
-	}
-	return true
 }
