@@ -125,7 +125,6 @@ func LockValue(db *sql.DB, uid string, value string) error {
 	return tx.Commit()
 }
 
-// ------------------------------------------done ------------------------------------------
 func TranferLockValue(db *sql.DB, uid string, value string ) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -140,9 +139,9 @@ func TranferLockValue(db *sql.DB, uid string, value string ) error {
 		return err
 	}
 
-	valueInt := new(big.Int)
-	currentValueInt := new(big.Int)
-	lockValueInt := new(big.Int)
+	valueInt, _ := util.String2BigInt(value)
+	currentValueInt, _ := util.String2BigInt(currentValue)
+	lockValueInt, _ := util.String2BigInt(lockValue)
 
 	newLockValue := new(big.Int)
 	newLockValue.Sub(lockValueInt, valueInt)
@@ -164,7 +163,6 @@ func TranferLockValue(db *sql.DB, uid string, value string ) error {
 	return tx.Commit()
 }
 
-// ------------------------------------------done ------------------------------------------
 func QueryUserValue(db *sql.DB, uid string) (string, string, string, error) {
 	var value, lockValue, allowValue string
 	err := db.QueryRow("SELECT value, lockvalue, allowvalue FROM users WHERE uid=?", uid).Scan(&value, &lockValue, &allowValue)

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"regexp"
 	"strconv"
 	"sync"
 
@@ -20,14 +21,21 @@ const (
 )
 
 var (
-	Txcache       = sync.Map{}
+	//check if string are in telegram username format
+	isStringAlphabetic = regexp.MustCompile(`^[a-zA-Z0-9_-]*$`).MatchString
+
+	//cache
+	Txcache = sync.Map{}
+
+	//database
 	userDb        *sql.DB
 	historyDb     *sql.DB
+
+	//channel
 	inputTranfer  = make(chan manage.TranferParam)
 	outputTranfer = make(chan string)
 	inputCotpay   = make(chan manage.CotpayParam)
 	outputCotpay  = make(chan string)
-
 	inputDeposit  = make(chan manage.DepositParam)
 	outputDeposit = make(chan string)
 )
@@ -89,7 +97,12 @@ func main() {
 						homePage(bot, update)
 					}
 				case "Tranfer receiver username":
-					getTranferReceiverUsername(bot, update.Message)
+					err := getTranferReceiverUsername(bot, update.Message)
+					if err != nil {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
+						bot.Send(msg)
+						homePage(bot, update)
+					}
 
 				case "Tranfer value":
 					err := getTranferValue(bot, update)
@@ -222,7 +235,7 @@ func deposit(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 		return errors.New("invalid value")
 	}
 	value := update.Message.Text
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit value is " + value)
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit value is "+value)
 	bot.Send(msg)
 	depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: value}
 	inputDeposit <- depositParam
@@ -246,9 +259,9 @@ func withdraw(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 		bot.Send(msg)
 		return errors.New("invalid value")
 	}
-	
+
 	value := update.Message.Text
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value is " + update.Message.Text)
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw value is "+update.Message.Text)
 	bot.Send(msg)
 	depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: "-" + value}
 	inputDeposit <- depositParam
@@ -292,8 +305,12 @@ func getTranferReceiverUID(bot *tgbotapi.BotAPI, message *tgbotapi.Message) erro
 	return nil
 }
 
-func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 	receiver := message.Text
+	if !isStringAlphabetic(receiver) {
+		return errors.New("invalid username type")
+	}
+
 	msg := tgbotapi.NewMessage(message.Chat.ID, "Receiver is "+receiver)
 	bot.Send(msg)
 
@@ -318,6 +335,8 @@ func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 	msg = tgbotapi.NewMessage(message.Chat.ID, "Tranfer value")
 	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
 	bot.Send(msg)
+	
+	return nil
 }
 
 func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
@@ -524,8 +543,8 @@ func confirm_cotpay_receiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	txID, _ := strconv.Atoi(message.Text)
 	transaction, err := database.QueryTransactionByID(historyDb, txID)
 	if err != nil {
-		// text := "error while cotpay, please try again"
-		msg := tgbotapi.NewMessage(message.Chat.ID, err.Error())
+		text := "error while cotpay, please try again"
+		msg := tgbotapi.NewMessage(message.Chat.ID, text)
 		bot.Send(msg)
 	} else {
 		sender, _ := strconv.Atoi(transaction.Sender)
@@ -546,7 +565,7 @@ func cancel_cotpay_receiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) err
 		bot.Send(msg)
 		return err
 	}
-	err = database.LockValue(userDb, transaction.Sender, "-" + transaction.Amount)
+	err = database.LockValue(userDb, transaction.Sender, "-"+transaction.Amount)
 	if err != nil {
 		text := "error while cotpay, please try again !!"
 		msg := tgbotapi.NewMessage(message.Chat.ID, text)
