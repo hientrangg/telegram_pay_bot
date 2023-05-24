@@ -56,7 +56,6 @@ func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, inpu
 	}
 }
 
-//// errorrr///////////////////////////////////
 func TranferCotpay(userDb *sql.DB, t database.Transaction) error {
 	err := database.TranferLockValue(userDb, t.Sender, t.Amount)
 	if err != nil {
