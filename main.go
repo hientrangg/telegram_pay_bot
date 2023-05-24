@@ -28,16 +28,8 @@ var (
 	Txcache = sync.Map{}
 
 	//database
-	userDb        *sql.DB
-	historyDb     *sql.DB
-
-	//channel
-	inputTranfer  = make(chan manage.TranferParam)
-	outputTranfer = make(chan string)
-	inputCotpay   = make(chan manage.CotpayParam)
-	outputCotpay  = make(chan string)
-	inputDeposit  = make(chan manage.DepositParam)
-	outputDeposit = make(chan string)
+	userDb    *sql.DB
+	historyDb *sql.DB
 )
 
 func init() {
@@ -57,165 +49,164 @@ func main() {
 
 	updates := bot.GetUpdatesChan(u)
 
-	go manage.Tranfer(userDb, historyDb, inputTranfer, outputTranfer)
-	go manage.RequestCotpay(bot, userDb, historyDb, inputCotpay, outputCotpay)
-	go manage.DoDeposit(userDb, historyDb, inputDeposit, outputDeposit)
-
 	for update := range updates {
-		if update.Message != nil {
-			if update.Message.IsCommand() {
-				switch update.Message.Command() {
-				case "start":
-					register(bot, update.Message)
+		input := make(chan tgbotapi.Update)
+		go processingUpdate(bot, input)
+		input <- update
+	}
+}
+
+func processingUpdate(bot *tgbotapi.BotAPI, input chan tgbotapi.Update) {
+	update := <-input
+	if update.Message != nil {
+		if update.Message.IsCommand() {
+			switch update.Message.Command() {
+			case "start":
+				register(bot, update.Message)
+				homePage(bot, update)
+			default:
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "I don't know this command, please try again")
+				if _, err := bot.Send(msg); err != nil {
+					panic(err)
+				}
+			}
+
+		} else if update.Message.ReplyToMessage != nil {
+			switch update.Message.ReplyToMessage.Text {
+			case "Deposit value":
+				err := deposit(bot, update)
+				if err != nil {
 					homePage(bot, update)
-				default:
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "I don't know this command, please try again")
+				}
+				homePage(bot, update)
+			case "Withdraw value":
+				err := withdraw(bot, update)
+				if err != nil {
+					homePage(bot, update)
+				}
+				homePage(bot, update)
+			case "Tranfer receiver UID":
+				err := getTranferReceiverUID(bot, update.Message)
+				if err != nil {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
 					if _, err := bot.Send(msg); err != nil {
 						panic(err)
 					}
+					homePage(bot, update)
 				}
-
-			} else if update.Message.ReplyToMessage != nil {
-				switch update.Message.ReplyToMessage.Text {
-				case "Deposit value":
-					err := deposit(bot, update)
-					if err != nil {
-						homePage(bot, update)
-						continue
-					}
-					homePage(bot, update)
-				case "Withdraw value":
-					err := withdraw(bot, update)
-					if err != nil {
-						homePage(bot, update)
-						continue
-					}
-					homePage(bot, update)
-				case "Tranfer receiver UID":
-					err := getTranferReceiverUID(bot, update.Message)
-					if err != nil {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
-						if _, err := bot.Send(msg); err != nil {
-							panic(err)
-						}
-						homePage(bot, update)
-					}
-				case "Tranfer receiver username":
-					err := getTranferReceiverUsername(bot, update.Message)
-					if err != nil {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
-						if _, err := bot.Send(msg); err != nil {
-							panic(err)
-						}
-						homePage(bot, update)
-					}
-
-				case "Tranfer value":
-					err := getTranferValue(bot, update)
-					if err != nil {
-						homePage(bot, update)
-						continue
-					}
-					homePage(bot, update)
-				case "Cotpay receiver UID":
-					getCotpayReceiver(bot, update.Message)
-
-				case "Cotpay value":
-					err := getCotpayValue(bot, update.Message)
-					if err != nil {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
-						if _, err := bot.Send(msg); err != nil {
-							panic(err)
-						}
-						homePage(bot, update)
-						continue
+			case "Tranfer receiver username":
+				err := getTranferReceiverUsername(bot, update.Message)
+				if err != nil {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
+					if _, err := bot.Send(msg); err != nil {
+						panic(err)
 					}
 					homePage(bot, update)
 				}
+
+			case "Tranfer value":
+				err := getTranferValue(bot, update)
+				if err != nil {
+					homePage(bot, update)
+				}
+				homePage(bot, update)
+			case "Cotpay receiver UID":
+				getCotpayReceiver(bot, update.Message)
+
+			case "Cotpay value":
+				err := getCotpayValue(bot, update.Message)
+				if err != nil {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
+					if _, err := bot.Send(msg); err != nil {
+						panic(err)
+					}
+					homePage(bot, update)
+				}
+				homePage(bot, update)
 			}
-		} else if update.CallbackQuery != nil {
-			callback := tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data)
-			if _, err := bot.Request(callback); err != nil {
+		}
+	} else if update.CallbackQuery != nil {
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data)
+		if _, err := bot.Request(callback); err != nil {
+			panic(err)
+		}
+
+		var msg tgbotapi.MessageConfig
+		switch update.CallbackQuery.Data {
+		case "username":
+			updateUsername(bot, update.CallbackQuery)
+			homePage(bot, update)
+
+		case "deposit":
+			msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Deposit value")
+			msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+			if _, err := bot.Send(msg); err != nil {
 				panic(err)
 			}
 
-			var msg tgbotapi.MessageConfig
-			switch update.CallbackQuery.Data {
-			case "username":
-				updateUsername(bot, update.CallbackQuery)
-				homePage(bot, update)
-
-			case "deposit":
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Deposit value")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
-				}
-
-			case "withdraw":
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Withdraw value")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
-				}
-			case "status":
-				getBalance(bot, update.CallbackQuery)
-				homePage(bot, update)
-
-			case "tranfer":
-				text := "CHOOSE TRANFER TYPE"
-				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, text)
-				msg.ReplyMarkup = util.TranferKeyboard
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
-				}
-
-			case "tranferUsername":
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Tranfer receiver username")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
-				}
-
-			case "tranferUid":
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Tranfer receiver UID")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
-				}
-
-			case "cotpay":
-
-				msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Cotpay receiver UID")
-				msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
-				if _, err := bot.Send(msg); err != nil {
-					panic(err)
-				}
-			case "lockvalue":
-				getLockValue(bot, update.CallbackQuery)
-				homePage(bot, update)
-
-			case "allowvalue":
-				getAllowValue(bot, update.CallbackQuery)
-				homePage(bot, update)
-
-			case "uid":
-				getUID(bot, update.CallbackQuery)
-				homePage(bot, update)
-
-			case "confirm-cotpay-receiver":
-				confirm_cotpay_receiver(bot, update.CallbackQuery.Message)
-				homePage(bot, update)
-
-			case "cancel-cotpay-receiver":
-				cancel_cotpay_receiver(bot, update.CallbackQuery.Message)
-				homePage(bot, update)
-
-			case "confirm-cotpay-sender":
-				confirm_cotpay_sender(bot, update.CallbackQuery.Message)
-				homePage(bot, update)
-
+		case "withdraw":
+			msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Withdraw value")
+			msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+			if _, err := bot.Send(msg); err != nil {
+				panic(err)
 			}
+		case "status":
+			getBalance(bot, update.CallbackQuery)
+			homePage(bot, update)
+
+		case "tranfer":
+			text := "CHOOSE TRANFER TYPE"
+			msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, text)
+			msg.ReplyMarkup = util.TranferKeyboard
+			if _, err := bot.Send(msg); err != nil {
+				panic(err)
+			}
+
+		case "tranferUsername":
+			msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Tranfer receiver username")
+			msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+			if _, err := bot.Send(msg); err != nil {
+				panic(err)
+			}
+
+		case "tranferUid":
+			msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Tranfer receiver UID")
+			msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+			if _, err := bot.Send(msg); err != nil {
+				panic(err)
+			}
+
+		case "cotpay":
+
+			msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Cotpay receiver UID")
+			msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+			if _, err := bot.Send(msg); err != nil {
+				panic(err)
+			}
+		case "lockvalue":
+			getLockValue(bot, update.CallbackQuery)
+			homePage(bot, update)
+
+		case "allowvalue":
+			getAllowValue(bot, update.CallbackQuery)
+			homePage(bot, update)
+
+		case "uid":
+			getUID(bot, update.CallbackQuery)
+			homePage(bot, update)
+
+		case "confirm-cotpay-receiver":
+			confirm_cotpay_receiver(bot, update.CallbackQuery.Message)
+			homePage(bot, update)
+
+		case "cancel-cotpay-receiver":
+			cancel_cotpay_receiver(bot, update.CallbackQuery.Message)
+			homePage(bot, update)
+
+		case "confirm-cotpay-sender":
+			confirm_cotpay_sender(bot, update.CallbackQuery.Message)
+			homePage(bot, update)
+
 		}
 	}
 }
@@ -258,6 +249,11 @@ func deposit(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 		panic(err)
 	}
 	depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: value}
+
+	inputDeposit := make(chan manage.DepositParam)
+	outputDeposit := make(chan string)
+	go manage.DoDeposit(userDb, historyDb, inputDeposit, outputDeposit)
+
 	inputDeposit <- depositParam
 	msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Doing deposit")
 	if _, err := bot.Send(msg); err != nil {
@@ -294,6 +290,11 @@ func withdraw(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 		panic(err)
 	}
 	depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: "-" + value}
+
+	inputDeposit := make(chan manage.DepositParam)
+	outputDeposit := make(chan string)
+	go manage.DoDeposit(userDb, historyDb, inputDeposit, outputDeposit)
+
 	inputDeposit <- depositParam
 	status := <-outputDeposit
 
@@ -373,7 +374,7 @@ func getTranferReceiverUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 	if _, err := bot.Send(msg); err != nil {
 		panic(err)
 	}
-	
+
 	return nil
 }
 
@@ -407,6 +408,10 @@ func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 			Receiver: tx.Receiver,
 			Value:    tx.Amount,
 		}
+
+		inputTranfer := make(chan manage.TranferParam)
+		outputTranfer := make(chan string)
+		go manage.Tranfer(userDb, historyDb, inputTranfer, outputTranfer)
 
 		inputTranfer <- tranferParam
 		Txcache.Delete(sender)
@@ -464,7 +469,7 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 		return errors.New("invalid value")
 	} else {
 		value := message.Text
@@ -474,7 +479,7 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 			if _, err := bot.Send(msg); err != nil {
 				log.Panic(err)
 			}
-		
+
 			return errors.New("invalid value")
 		} else {
 			msg := tgbotapi.NewMessage(message.Chat.ID, "Cotpay value "+value)
@@ -495,6 +500,11 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 				Receiver: tx.Receiver,
 				Value:    tx.Value,
 			}
+
+			inputCotpay := make(chan manage.CotpayParam)
+			outputCotpay := make(chan string)
+			go manage.RequestCotpay(bot, userDb, historyDb, inputCotpay, outputCotpay)
+
 			inputCotpay <- cotpayParam
 			msg = tgbotapi.NewMessage(message.Chat.ID, "Sending cotpay request")
 			bot.Send(msg)
@@ -505,13 +515,13 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 				if _, err := bot.Send(msg); err != nil {
 					log.Panic(err)
 				}
-			
+
 			} else {
 				msg := tgbotapi.NewMessage(message.Chat.ID, "Send cotpay request success, txID is: "+txID)
 				if _, err := bot.Send(msg); err != nil {
 					log.Panic(err)
 				}
-			
+
 			}
 
 		}
@@ -528,7 +538,6 @@ func getBalance(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
 
 	} else {
 		text := "Your value is " + userData.Value
@@ -551,13 +560,13 @@ func register(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			if _, err := bot.Send(msg); err != nil {
 				log.Panic(err)
 			}
-		
+
 		} else {
 			msg := tgbotapi.NewMessage(message.Chat.ID, "Register Successful")
 			if _, err := bot.Send(msg); err != nil {
 				log.Panic(err)
 			}
-		
+
 		}
 	} else {
 		if uid != strconv.Itoa(user) {
@@ -566,7 +575,7 @@ func register(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			if _, err := bot.Send(msg); err != nil {
 				log.Panic(err)
 			}
-		
+
 		}
 	}
 }
@@ -580,7 +589,7 @@ func getLockValue(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 	} else {
 
 		text := "Your lock value is " + userData.Lock_value
@@ -600,7 +609,7 @@ func getAllowValue(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 	} else {
 		text := "Your allow value is " + userData.Allow_value
 		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, text)
@@ -629,20 +638,20 @@ func confirm_cotpay_receiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 	} else {
 		sender, _ := strconv.Atoi(transaction.Sender)
 		msg := tgbotapi.NewMessage(int64(sender), "Recerver confirm, you need confirm to do tranfer ")
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 		msg.Text = strconv.Itoa(txID)
 		msg.ReplyMarkup = util.SenderConfirmKeyboard
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 	}
 }
 
@@ -655,17 +664,17 @@ func cancel_cotpay_receiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) err
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 		return err
 	}
-	err = database.LockValue(userDb, transaction.Sender, "-" + transaction.Amount)
+	err = database.LockValue(userDb, transaction.Sender, "-"+transaction.Amount)
 	if err != nil {
 		text := "error while cotpay, please try again !!"
 		msg := tgbotapi.NewMessage(message.Chat.ID, text)
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 		return err
 	}
 	transaction.Status = "cancel"
@@ -689,7 +698,7 @@ func confirm_cotpay_sender(bot *tgbotapi.BotAPI, message *tgbotapi.Message) erro
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 		return err
 	}
 
@@ -700,7 +709,7 @@ func confirm_cotpay_sender(bot *tgbotapi.BotAPI, message *tgbotapi.Message) erro
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 		return err
 	}
 
@@ -724,14 +733,13 @@ func updateUsername(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) erro
 		if _, err := bot.Send(msg); err != nil {
 			log.Panic(err)
 		}
-	
+
 		return err
 	}
 	msg := tgbotapi.NewMessage(callback.Message.Chat.ID, "Update username success")
 	if _, err := bot.Send(msg); err != nil {
 		log.Panic(err)
 	}
-
 
 	return nil
 }

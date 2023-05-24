@@ -82,40 +82,38 @@ func Tranfer(userDb *sql.DB, historyDb *sql.DB, input chan TranferParam, output 
 	}
 }
 func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, outputChan chan string) {
-	for {
-		depositParam := <-inputChan
+	depositParam := <-inputChan
 
-		err := database.UpdateValue(userdb, strconv.Itoa(depositParam.Uid), depositParam.Value)
+	err := database.UpdateValue(userdb, strconv.Itoa(depositParam.Uid), depositParam.Value)
+	if err != nil {
+		outputChan <- "error"
+		
+	}
+
+	if depositParam.Value[0] != '-' {
+		t := database.Transaction{Type: "deposit", Sender: strconv.Itoa(depositParam.Uid), Receiver: strconv.Itoa(depositParam.Uid), Amount: depositParam.Value, Status: "Done"}
+
+		txID, err := database.AddTransaction(historyDb, &t)
 		if err != nil {
 			outputChan <- "error"
-			continue
+			
 		}
 
-		if depositParam.Value[0] != '-' {
-			t := database.Transaction{Type: "deposit", Sender: strconv.Itoa(depositParam.Uid), Receiver: strconv.Itoa(depositParam.Uid), Amount: depositParam.Value, Status: "Done"}
+		txIDInt := strconv.Itoa(txID)
 
-			txID, err := database.AddTransaction(historyDb, &t)
-			if err != nil {
-				outputChan <- "error"
-				continue
-			}
+		outputChan <- txIDInt
+	} else {
+		t := database.Transaction{Type: "withdraw", Sender: strconv.Itoa(depositParam.Uid), Receiver: strconv.Itoa(depositParam.Uid), Amount: depositParam.Value[1:], Status: "Done"}
 
-			txIDInt := strconv.Itoa(txID)
-
-			outputChan <- txIDInt
-		} else {
-			t := database.Transaction{Type: "withdraw", Sender: strconv.Itoa(depositParam.Uid), Receiver: strconv.Itoa(depositParam.Uid), Amount: depositParam.Value[1:], Status: "Done"}
-
-			txID, err := database.AddTransaction(historyDb, &t)
-			if err != nil {
-				outputChan <- "error"
-				continue
-			}
-
-			txIDInt := strconv.Itoa(txID)
-
-			outputChan <- txIDInt
+		txID, err := database.AddTransaction(historyDb, &t)
+		if err != nil {
+			outputChan <- "error"
+			
 		}
+
+		txIDInt := strconv.Itoa(txID)
+
+		outputChan <- txIDInt
 	}
 }
 
