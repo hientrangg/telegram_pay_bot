@@ -123,9 +123,6 @@ func main() {
 						continue
 					}
 					homePage(bot, update)
-				default:
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "defaut !!!!!!!!!!!!")
-					bot.Send(msg)
 				}
 			}
 		} else if update.CallbackQuery != nil {
@@ -565,7 +562,7 @@ func cancel_cotpay_receiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) err
 		bot.Send(msg)
 		return err
 	}
-	err = database.LockValue(userDb, transaction.Sender, "-"+transaction.Amount)
+	err = database.LockValue(userDb, transaction.Sender, "-" + transaction.Amount)
 	if err != nil {
 		text := "error while cotpay, please try again !!"
 		msg := tgbotapi.NewMessage(message.Chat.ID, text)
