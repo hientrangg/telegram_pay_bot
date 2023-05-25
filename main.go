@@ -74,16 +74,10 @@ func processingUpdate(bot *tgbotapi.BotAPI, input chan tgbotapi.Update) {
 		} else if update.Message.ReplyToMessage != nil {
 			switch update.Message.ReplyToMessage.Text {
 			case "Deposit value":
-				err := deposit(bot, update)
-				if err != nil {
-					homePage(bot, update)
-				}
+				deposit(bot, update)
 				homePage(bot, update)
 			case "Withdraw value":
-				err := withdraw(bot, update)
-				if err != nil {
-					homePage(bot, update)
-				}
+				withdraw(bot, update)
 				homePage(bot, update)
 			case "Tranfer receiver UID":
 				err := getTranferReceiverUID(bot, update.Message)
@@ -105,11 +99,19 @@ func processingUpdate(bot *tgbotapi.BotAPI, input chan tgbotapi.Update) {
 				}
 
 			case "Tranfer value":
-				err := getTranferValue(bot, update)
+				getTranferValue(bot, update)
+				homePage(bot, update)
+
+			case "Cotpay receiver username":
+				err := getCotpayUsername(bot, update.Message)
 				if err != nil {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, err.Error())
+					if _, err := bot.Send(msg); err != nil {
+						panic(err)
+					}
 					homePage(bot, update)
 				}
-				homePage(bot, update)
+
 			case "Cotpay receiver UID":
 				getCotpayReceiver(bot, update.Message)
 
@@ -120,7 +122,6 @@ func processingUpdate(bot *tgbotapi.BotAPI, input chan tgbotapi.Update) {
 					if _, err := bot.Send(msg); err != nil {
 						panic(err)
 					}
-					homePage(bot, update)
 				}
 				homePage(bot, update)
 			}
@@ -177,7 +178,19 @@ func processingUpdate(bot *tgbotapi.BotAPI, input chan tgbotapi.Update) {
 			}
 
 		case "cotpay":
-
+			text := "CHOOSE COTPAY TYPE"
+			msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, text)
+			msg.ReplyMarkup = util.ChooseCotpayKeyboard
+			if _, err := bot.Send(msg); err != nil {
+				panic(err)
+			}
+		case "cotpayUsername":
+			msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Cotpay receiver username")
+			msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+			if _, err := bot.Send(msg); err != nil {
+				panic(err)
+			}
+		case "cotpayUid":
 			msg = tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Cotpay receiver UID")
 			msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
 			if _, err := bot.Send(msg); err != nil {
@@ -438,6 +451,39 @@ func getCotpayReceiver(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	if _, err := bot.Send(msg); err != nil {
 		panic(err)
 	}
+}
+
+func getCotpayUsername(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
+	username := message.Text
+	uid, err := database.QueryUid(userDb, username) 
+	if err != nil {
+		return errors.New("Receiver must registered to do cotpay")
+	}
+
+	msg := tgbotapi.NewMessage(message.Chat.ID, "Receiver is " + username)
+	if _, err := bot.Send(msg); err != nil {
+		log.Panic(err)
+	}
+
+	sender := int(message.From.ID)
+
+	tx := manage.CotpayParam{
+		Sender:   strconv.Itoa(sender),
+		Username: message.From.UserName,
+		Receiver: uid,
+		Value:    "0",
+	}
+
+	Txcache.Store(sender, tx)
+
+	msg = tgbotapi.NewMessage(message.Chat.ID, "Cotpay value")
+	msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+	if _, err := bot.Send(msg); err != nil {
+		panic(err)
+	}
+
+
+	return nil
 }
 
 func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {

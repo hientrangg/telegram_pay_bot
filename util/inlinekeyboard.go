@@ -26,6 +26,13 @@ var TranferKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 	),
 )
 
+var ChooseCotpayKeyboard = tgbotapi.NewInlineKeyboardMarkup(
+	tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("COTPAY VIA UID", "cotpayUid"),
+		tgbotapi.NewInlineKeyboardButtonData("COTPAY VIA USERNAME", "cotpayUsername"),
+	),
+)
+
 func InitStartKeyboard(uid int,  username string, balance string) tgbotapi.InlineKeyboardMarkup {
 	var keyboard = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
