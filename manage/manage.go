@@ -35,20 +35,18 @@ type DepositParam struct {
 	Value string
 }
 
-func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, input chan CotpayParam, output chan string) {
-	for {
-		cotpayParam := <-input
-		txIDInt, err := DoCotPay(bot, userdb, historyDb, cotpayParam.Sender, cotpayParam.Username, cotpayParam.Receiver, cotpayParam.Value)
-		if err != nil {
-			status := "error"
-			output <- status
-			continue
-		}
+func RequestCotpay(bot *tgbotapi.BotAPI, userdb *sql.DB, historyDb *sql.DB, input CotpayParam) (string, error) {
 
-		txID := strconv.Itoa(txIDInt)
-
-		output <- txID
+	cotpayParam := input
+	txIDInt, err := DoCotPay(bot, userdb, historyDb, cotpayParam.Sender, cotpayParam.Username, cotpayParam.Receiver, cotpayParam.Value)
+	if err != nil {
+		return "0", err
 	}
+
+	txID := strconv.Itoa(txIDInt)
+
+	return txID, nil
+
 }
 
 func TranferCotpay(userDb *sql.DB, t database.Transaction) error {
@@ -65,29 +63,27 @@ func TranferCotpay(userDb *sql.DB, t database.Transaction) error {
 	return nil
 }
 
-func Tranfer(userDb *sql.DB, historyDb *sql.DB, input chan TranferParam, output chan string) {
-	for {
-		tranferParam := <-input
+func Tranfer(userDb *sql.DB, historyDb *sql.DB, input TranferParam) (string, error) {
 
-		txIDInt, err := DoTranfer(userDb, historyDb, tranferParam.Sender, tranferParam.Receiver, tranferParam.Value)
-		if err != nil {
-			status := "error"
-			output <- status
-			continue
-		}
+	tranferParam := input
 
-		txID := strconv.Itoa(txIDInt)
-
-		output <- txID
+	txIDInt, err := DoTranfer(userDb, historyDb, tranferParam.Sender, tranferParam.Receiver, tranferParam.Value)
+	if err != nil {
+		return "0", err
 	}
+
+	txID := strconv.Itoa(txIDInt)
+
+	return txID, nil
 }
-func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, outputChan chan string) {
-	depositParam := <-inputChan
+
+func DoDeposit(userdb *sql.DB, historyDb *sql.DB, input DepositParam) (string, error) {
+	depositParam := input
 
 	err := database.UpdateValue(userdb, strconv.Itoa(depositParam.Uid), depositParam.Value)
 	if err != nil {
-		outputChan <- "error"
-		
+		return "0", err
+
 	}
 
 	if depositParam.Value[0] != '-' {
@@ -95,25 +91,25 @@ func DoDeposit(userdb *sql.DB, historyDb *sql.DB, inputChan chan DepositParam, o
 
 		txID, err := database.AddTransaction(historyDb, &t)
 		if err != nil {
-			outputChan <- "error"
-			
+			return "0", err
+
 		}
 
-		txIDInt := strconv.Itoa(txID)
+		txIDStr := strconv.Itoa(txID)
 
-		outputChan <- txIDInt
+		return txIDStr, nil
 	} else {
 		t := database.Transaction{Type: "withdraw", Sender: strconv.Itoa(depositParam.Uid), Receiver: strconv.Itoa(depositParam.Uid), Amount: depositParam.Value[1:], Status: "Done"}
 
 		txID, err := database.AddTransaction(historyDb, &t)
 		if err != nil {
-			outputChan <- "error"
-			
+			return "0", err
+
 		}
 
-		txIDInt := strconv.Itoa(txID)
+		txIDStr := strconv.Itoa(txID)
 
-		outputChan <- txIDInt
+		return txIDStr, nil
 	}
 }
 

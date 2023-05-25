@@ -250,24 +250,15 @@ func deposit(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 	}
 	depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: value}
 
-	inputDeposit := make(chan manage.DepositParam)
-	outputDeposit := make(chan string)
-	go manage.DoDeposit(userDb, historyDb, inputDeposit, outputDeposit)
+	txId, err := manage.DoDeposit(userDb, historyDb, depositParam)
 
-	inputDeposit <- depositParam
-	msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Doing deposit")
-	if _, err := bot.Send(msg); err != nil {
-		panic(err)
-	}
-	status := <-outputDeposit
-
-	if status == "error" {
+	if err != nil {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Error while add tx, please try again")
 		if _, err := bot.Send(msg); err != nil {
 			panic(err)
 		}
 	} else {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit successful, txId: "+status)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Deposit successful, txId: "+txId)
 		if _, err := bot.Send(msg); err != nil {
 			panic(err)
 		}
@@ -291,20 +282,15 @@ func withdraw(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 	}
 	depositParam := manage.DepositParam{Uid: int(update.Message.From.ID), Value: "-" + value}
 
-	inputDeposit := make(chan manage.DepositParam)
-	outputDeposit := make(chan string)
-	go manage.DoDeposit(userDb, historyDb, inputDeposit, outputDeposit)
+	txId, err := manage.DoDeposit(userDb, historyDb, depositParam)
 
-	inputDeposit <- depositParam
-	status := <-outputDeposit
-
-	if status == "error" {
+	if err != nil {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Error while withdraw, please try again")
 		if _, err := bot.Send(msg); err != nil {
 			panic(err)
 		}
 	} else {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw successful")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Withdraw successful, txID: "+txId)
 		if _, err := bot.Send(msg); err != nil {
 			panic(err)
 		}
@@ -409,20 +395,11 @@ func getTranferValue(bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
 			Value:    tx.Amount,
 		}
 
-		inputTranfer := make(chan manage.TranferParam)
-		outputTranfer := make(chan string)
-		go manage.Tranfer(userDb, historyDb, inputTranfer, outputTranfer)
+		txID, err := manage.Tranfer(userDb, historyDb, tranferParam)
 
-		inputTranfer <- tranferParam
 		Txcache.Delete(sender)
 
-		msg.Text = "Doing Tranfer"
-		if _, err := bot.Send(msg); err != nil {
-			panic(err)
-		}
-
-		txID := <-outputTranfer
-		if txID == "error" {
+		if err != nil {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "error while do tranfer, please try again !!!")
 			if _, err := bot.Send(msg); err != nil {
 				panic(err)
@@ -501,29 +478,20 @@ func getCotpayValue(bot *tgbotapi.BotAPI, message *tgbotapi.Message) error {
 				Value:    tx.Value,
 			}
 
-			inputCotpay := make(chan manage.CotpayParam)
-			outputCotpay := make(chan string)
-			go manage.RequestCotpay(bot, userDb, historyDb, inputCotpay, outputCotpay)
-
-			inputCotpay <- cotpayParam
-			msg = tgbotapi.NewMessage(message.Chat.ID, "Sending cotpay request")
-			bot.Send(msg)
+			txID, err := manage.RequestCotpay(bot, userDb, historyDb, cotpayParam)
 			Txcache.Delete(sender)
-			txID := <-outputCotpay
-			if txID == "error" {
+
+			if err != nil {
 				msg := tgbotapi.NewMessage(message.Chat.ID, "error while send cotpay request, please try again")
 				if _, err := bot.Send(msg); err != nil {
 					log.Panic(err)
 				}
-
 			} else {
 				msg := tgbotapi.NewMessage(message.Chat.ID, "Send cotpay request success, txID is: "+txID)
 				if _, err := bot.Send(msg); err != nil {
 					log.Panic(err)
 				}
-
 			}
-
 		}
 	}
 	return nil
@@ -566,7 +534,6 @@ func register(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			if _, err := bot.Send(msg); err != nil {
 				log.Panic(err)
 			}
-
 		}
 	} else {
 		if uid != strconv.Itoa(user) {
@@ -575,7 +542,6 @@ func register(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			if _, err := bot.Send(msg); err != nil {
 				log.Panic(err)
 			}
-
 		}
 	}
 }
